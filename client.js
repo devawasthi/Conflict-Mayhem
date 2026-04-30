@@ -7,7 +7,13 @@ const state = {
   noticeTone: "info",
   selectedCounts: {},
   pendingLocalAction: null,
+  logExpanded: false,
+  crashOverlay: null,
 };
+
+const LOG_COLLAPSE_COUNT = 5;
+const CRASH_OVERLAY_DURATION_MS = 2600;
+let crashOverlayTimer = null;
 
 const CARD_VISUALS = {
   hotPotato: { symbol: "!!", label: "Production Crash" },
@@ -23,6 +29,22 @@ const CARD_VISUALS = {
   pretzel: { symbol: "SN", label: "Sticky Note" },
   popcorn: { symbol: "KB", label: "Mechanical Keyboard" },
   candy: { symbol: "OT", label: "Overflow Tab" },
+};
+
+const CARD_ART = {
+  hotPotato: "assets/cards/production-crash.webp",
+  ovenMitt: "assets/cards/blame-the-intern.webp",
+  nope: "assets/cards/nope.webp",
+  peek: "assets/cards/peer-review.webp",
+  skip: "assets/cards/revert-commit.webp",
+  attack: "assets/cards/pager-alert.webp",
+  mixUp: "assets/cards/deploy-to-staging.webp",
+  swipe: "assets/cards/borrow-credentials.webp",
+  cookie: "assets/cards/rubber-duck.webp",
+  donut: "assets/cards/energy-drink.webp",
+  pretzel: "assets/cards/sticky-note.webp",
+  popcorn: "assets/cards/mechanical-keyboard.webp",
+  candy: "assets/cards/overflow-tab.webp",
 };
 
 const ui = {
@@ -44,16 +66,21 @@ const ui = {
   noticeBanner: document.querySelector("#notice-banner"),
   setupCard: document.querySelector("#setup-card"),
   roomCard: document.querySelector("#room-card"),
+  logToggleBtn: document.querySelector("#log-toggle-btn"),
   playersList: document.querySelector("#players-list"),
   turnTitle: document.querySelector("#turn-title"),
   deckCount: document.querySelector("#deck-count"),
   discardName: document.querySelector("#discard-name"),
+  discardArt: document.querySelector("#discard-art"),
   discardText: document.querySelector("#discard-text"),
   promptBody: document.querySelector("#prompt-body"),
   logFeed: document.querySelector("#log-feed"),
   comboBar: document.querySelector("#combo-bar"),
   handGrid: document.querySelector("#hand-grid"),
   handSummary: document.querySelector("#hand-summary"),
+  crashOverlay: document.querySelector("#crash-overlay"),
+  crashOverlayTitle: document.querySelector("#crash-overlay-title"),
+  crashOverlayText: document.querySelector("#crash-overlay-text"),
 };
 
 const defaultName = `Dev-${Math.floor(Math.random() * 900 + 100)}`;
@@ -94,6 +121,7 @@ function connectSocket() {
     state.socket = null;
     state.room = null;
     resetLocalInteraction();
+    hideCrashOverlay();
     state.notice = "Connection closed. Refresh the page or reconnect by joining a room again.";
     render();
   });
@@ -136,9 +164,11 @@ function handleMessage(raw) {
   }
 
   if (message.type === "state") {
-    const previousRoomCode = state.room?.roomCode || null;
+    const previousRoom = state.room;
+    const previousRoomCode = previousRoom?.roomCode || null;
     state.room = message.state;
     reconcileLocalState();
+    handleRoomTransition(previousRoom, state.room);
     render();
     if (!previousRoomCode && state.room?.roomCode) {
       revealActiveRoom();
@@ -163,10 +193,92 @@ function handleMessage(raw) {
   if (message.type === "left_room") {
     state.room = null;
     resetLocalInteraction();
+    state.logExpanded = false;
+    hideCrashOverlay();
     state.notice = "You left the room.";
     state.noticeTone = "info";
     render();
   }
+}
+
+function handleRoomTransition(previousRoom, nextRoom) {
+  if (!nextRoom) {
+    state.logExpanded = false;
+    hideCrashOverlay();
+    return;
+  }
+
+  const sameRoom = previousRoom?.roomCode && previousRoom.roomCode === nextRoom.roomCode;
+  if (!sameRoom) {
+    state.logExpanded = false;
+    return;
+  }
+
+  const crashEntry = getNewLogEntries(previousRoom?.log || [], nextRoom.log || []).find(isCrashMomentLog);
+  if (crashEntry) {
+    showCrashOverlay(buildCrashOverlayPayload(crashEntry));
+  }
+}
+
+function getNewLogEntries(previousLog, nextLog) {
+  const maxOverlap = Math.min(previousLog.length, nextLog.length);
+
+  for (let overlap = maxOverlap; overlap >= 0; overlap -= 1) {
+    const previousSuffix = previousLog.slice(previousLog.length - overlap);
+    const nextPrefix = nextLog.slice(0, overlap);
+
+    if (previousSuffix.length !== nextPrefix.length) {
+      continue;
+    }
+
+    if (previousSuffix.every((entry, index) => entry === nextPrefix[index])) {
+      return nextLog.slice(overlap);
+    }
+  }
+
+  return nextLog.slice();
+}
+
+function isCrashMomentLog(entry) {
+  return (
+    entry.includes("neutralized a Production Crash") ||
+    entry.includes("was knocked out by a Production Crash")
+  );
+}
+
+function buildCrashOverlayPayload(entry) {
+  const actor = entry
+    .replace(" neutralized a Production Crash by blaming the intern.", "")
+    .replace(" was knocked out by a Production Crash.", "");
+
+  if (entry.includes("neutralized a Production Crash")) {
+    return {
+      title: "Production Crash Contained",
+      text: `${actor} blamed the intern and kept prod alive.`,
+    };
+  }
+
+  return {
+    title: "Production Crash",
+    text: `${actor} deployed straight into the apology draft.`,
+  };
+}
+
+function showCrashOverlay(payload) {
+  hideCrashOverlay();
+  state.crashOverlay = payload;
+  crashOverlayTimer = window.setTimeout(() => {
+    hideCrashOverlay();
+    renderCrashOverlay();
+  }, CRASH_OVERLAY_DURATION_MS);
+}
+
+function hideCrashOverlay() {
+  if (crashOverlayTimer) {
+    window.clearTimeout(crashOverlayTimer);
+    crashOverlayTimer = null;
+  }
+  state.crashOverlay = null;
 }
 
 function reconcileLocalState() {
@@ -204,6 +316,15 @@ function resetLocalInteraction() {
 function clearSelections() {
   resetLocalInteraction();
   render();
+}
+
+function toggleLogExpansion() {
+  if (!state.room || state.room.log.length <= LOG_COLLAPSE_COUNT) {
+    return;
+  }
+
+  state.logExpanded = !state.logExpanded;
+  renderLog();
 }
 
 function getPlayerName() {
@@ -467,6 +588,10 @@ function getCardVisual(cardKey) {
   return CARD_VISUALS[cardKey] || { symbol: "[]", label: "Card" };
 }
 
+function getCardArt(cardKey) {
+  return CARD_ART[cardKey] || null;
+}
+
 function render() {
   renderConnection();
   renderRoomMeta();
@@ -476,6 +601,7 @@ function render() {
   renderLog();
   renderComboBar();
   renderHand();
+  renderCrashOverlay();
 }
 
 function renderConnection() {
@@ -636,10 +762,24 @@ function renderCenter() {
 
   if (state.room.discardTop) {
     const visual = getCardVisual(state.room.discardTop.key);
+    const artwork = getCardArt(state.room.discardTop.key);
     ui.discardName.innerHTML = `<span class="inline-symbol" aria-hidden="true">${escapeHtml(visual.symbol)}</span>${escapeHtml(state.room.discardTop.name)}`;
+    if (ui.discardArt) {
+      if (artwork) {
+        ui.discardArt.hidden = false;
+        ui.discardArt.style.backgroundImage = `url("${artwork}")`;
+      } else {
+        ui.discardArt.hidden = true;
+        ui.discardArt.style.backgroundImage = "";
+      }
+    }
     ui.discardText.textContent = state.room.discardTop.description;
   } else {
     ui.discardName.textContent = "Nothing yet";
+    if (ui.discardArt) {
+      ui.discardArt.hidden = true;
+      ui.discardArt.style.backgroundImage = "";
+    }
     ui.discardText.textContent = "Played cards and spent combos will land here.";
   }
 
@@ -784,17 +924,56 @@ function renderLog() {
   ui.logFeed.innerHTML = "";
 
   if (!state.room || state.room.log.length === 0) {
+    ui.logToggleBtn.hidden = true;
+    ui.logToggleBtn.disabled = true;
+    ui.logToggleBtn.setAttribute("aria-expanded", "false");
     ui.logFeed.innerHTML =
       '<div class="empty-state">The incident log will update as the release unfolds.</div>';
     return;
   }
 
-  state.room.log.forEach((entry) => {
+  const allEntries = state.room.log;
+  const canExpand = allEntries.length > LOG_COLLAPSE_COUNT;
+  const visibleEntries =
+    canExpand && !state.logExpanded ? allEntries.slice(-LOG_COLLAPSE_COUNT) : allEntries;
+
+  ui.logToggleBtn.hidden = !canExpand;
+  ui.logToggleBtn.disabled = !canExpand;
+  ui.logToggleBtn.textContent = state.logExpanded
+    ? `Show Recent ${LOG_COLLAPSE_COUNT}`
+    : `Show Full Log (${allEntries.length})`;
+  ui.logToggleBtn.setAttribute("aria-expanded", String(state.logExpanded));
+
+  if (canExpand && !state.logExpanded) {
+    const summary = document.createElement("div");
+    summary.className = "log-summary";
+    summary.textContent = `Showing the latest ${LOG_COLLAPSE_COUNT} of ${allEntries.length} events.`;
+    ui.logFeed.append(summary);
+  }
+
+  visibleEntries.forEach((entry) => {
     const item = document.createElement("article");
     item.className = "log-item";
     item.textContent = entry;
     ui.logFeed.append(item);
   });
+}
+
+function renderCrashOverlay() {
+  if (!ui.crashOverlay) {
+    return;
+  }
+
+  if (!state.crashOverlay) {
+    ui.crashOverlay.hidden = true;
+    ui.crashOverlay.setAttribute("aria-hidden", "true");
+    return;
+  }
+
+  ui.crashOverlay.hidden = false;
+  ui.crashOverlay.setAttribute("aria-hidden", "false");
+  ui.crashOverlayTitle.textContent = state.crashOverlay.title;
+  ui.crashOverlayText.textContent = state.crashOverlay.text;
 }
 
 function renderComboBar() {
@@ -858,8 +1037,9 @@ function renderHand() {
 
   state.room.hand.forEach((card) => {
     const selectedCount = state.selectedCounts[card.key] || 0;
+    const artwork = getCardArt(card.key);
     const button = document.createElement("button");
-    button.className = `card-btn ${card.themeClass}`;
+    button.className = `card-btn ${card.themeClass}${artwork ? " has-art" : ""}`;
 
     const clickable =
       !handLocked &&
@@ -883,11 +1063,16 @@ function renderHand() {
           ? "Saved for reaction windows."
           : "This card resolves automatically.";
 
+    const artMarkup = artwork
+      ? `<div class="card-art" style="background-image: url('${artwork}')" aria-hidden="true"></div>`
+      : "";
+
     button.innerHTML = `
       <div class="card-topline">
         <span class="card-tag">${escapeHtml(card.tag)}</span>
         <span class="card-icon" aria-hidden="true">${escapeHtml(getCardVisual(card.key).symbol)}</span>
       </div>
+      ${artMarkup}
       <strong class="card-name">${escapeHtml(card.name)}</strong>
       <p class="card-text">${escapeHtml(card.description)}</p>
       <div class="card-meta">
@@ -916,6 +1101,7 @@ ui.startGameBtn.addEventListener("click", startGame);
 ui.copyRoomBtn.addEventListener("click", copyRoomCode);
 ui.drawBtnTop.addEventListener("click", drawCard);
 ui.drawBtnBottom.addEventListener("click", drawCard);
+ui.logToggleBtn.addEventListener("click", toggleLogExpansion);
 ui.roomInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     joinRoom();

@@ -20,9 +20,6 @@
         </div>
         <div class="hero-status">
           <div class="status-pill" id="connection-pill">Connecting</div>
-          <p class="hero-note">
-            Real-time rooms with a Python WebSocket backend.
-          </p>
         </div>
       </section>
 
@@ -131,6 +128,7 @@
             <div class="stack-card discard-stack">
               <span class="stack-label">Discard</span>
               <strong id="discard-name">Nothing yet</strong>
+              <div id="discard-art" class="stack-art" hidden></div>
               <p id="discard-text">Played cards and spent combos will land here.</p>
             </div>
           </div>
@@ -149,6 +147,9 @@
               <p class="eyebrow">Timeline</p>
               <h2>Incident Log</h2>
             </div>
+            <button id="log-toggle-btn" class="ghost-btn log-toggle-btn" type="button" hidden>
+              Show Full Log
+            </button>
           </div>
           <div id="log-feed" class="log-feed"></div>
         </article>
@@ -172,6 +173,20 @@
         <div id="hand-grid" class="hand-grid"></div>
       </section>
     </main>
+
+    <div id="crash-overlay" class="crash-overlay" hidden aria-hidden="true">
+      <div class="crash-overlay-panel">
+        <div class="crash-overlay-kicker">panic()</div>
+        <h2 id="crash-overlay-title">Production Crash</h2>
+        <p id="crash-overlay-text">Someone deployed with confidence and consequences.</p>
+        <div class="crash-overlay-chips" aria-hidden="true">
+          <span>500</span>
+          <span>rollback</span>
+          <span>oops</span>
+          <span>hotfix</span>
+        </div>
+      </div>
+    </div>
 
     <script src="client.js"></script>
   </body>
