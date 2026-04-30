@@ -102,7 +102,7 @@ CARD_CATALOG = {
         "needsTarget": False,
     },
     "swipe": {
-        "name": "Borrow Credentials",
+        "name": "Project Manager",
         "tag": "Action",
         "description": "Choose a player and steal a random card from their hand.",
         "themeClass": "theme-swipe",
@@ -911,9 +911,9 @@ class GameRoom:
         if kind == "swipe":
             target = self.get_player(effect["target_id"])
             if not target or not target.connected or not target.alive:
-                self.add_log("Borrow Credentials fizzled because the target was not available.")
+                self.add_log("Project Manager fizzled because the target was not available.")
                 return messages
-            return self.steal_random_card(actor, target, "Borrow Credentials")
+            return self.steal_random_card(actor, target, "Project Manager")
 
         if kind == "pair":
             target = self.get_player(effect["target_id"])

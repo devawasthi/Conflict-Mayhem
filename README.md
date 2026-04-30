@@ -27,7 +27,7 @@ Open that URL in two browser tabs or two different browsers to test multiplayer.
 - `Pager Alert` ends your turn without the normal draw and makes the next player take one extra required draw.
 - `Peer Review` shows you the next three cards privately.
 - `Deploy To Staging` shuffles the deck.
-- `Borrow Credentials` steals a random card from a chosen opponent.
+- `Project Manager` steals a random card from a chosen opponent.
 - `2` matching tools steals a random card from a chosen opponent.
 - `3` matching tools lets you request a specific card from a chosen opponent.
 - `5` different tools lets you reclaim one card from the discard pile.
