@@ -920,6 +920,23 @@ button:disabled {
   }
 }
 
+.site-footer {
+  width: min(100% - 24px, 1400px);
+  margin: 0 auto 28px;
+  padding: 0 0 16px;
+  text-align: center;
+  color: rgba(201, 222, 231, 0.7);
+  font-size: 0.92rem;
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+.site-footer p + p {
+  margin-top: 6px;
+}
+
 @media (max-width: 1120px) {
   .setup-grid,
   .board-grid {
@@ -939,6 +956,11 @@ button:disabled {
   .shell {
     width: min(100% - 16px, 1400px);
     padding-top: 12px;
+  }
+
+  .site-footer {
+    width: min(100% - 16px, 1400px);
+    margin-bottom: 20px;
   }
 
   .hero,
