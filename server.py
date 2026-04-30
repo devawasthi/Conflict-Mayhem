@@ -414,7 +414,7 @@ class GameRoom:
         random.shuffle(self.deck)
 
         self.current_player_id = self.players[0].id
-        self.add_log("A new Merge Conflict Mayhem match began.")
+        self.add_log("A new Exploding Productions match began.")
 
     def remove_player(self, player_id: str) -> bool:
         player = self.get_player(player_id)
@@ -1392,11 +1392,11 @@ class GameRequestHandler(SimpleHTTPRequestHandler):
 def run() -> None:
     handler = partial(GameRequestHandler, directory=str(BASE_DIR))
     server = ThreadingHTTPServer((HOST, PORT), handler)
-    print(f"Merge Conflict Mayhem Online running on http://{HOST}:{PORT}")
+    print(f"Exploding Productions running on http://{HOST}:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down Merge Conflict Mayhem Online.")
+        print("\nShutting down Exploding Productions.")
     finally:
         server.server_close()
 
