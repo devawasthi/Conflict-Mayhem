@@ -86,7 +86,7 @@ CARD_CATALOG = {
     "attack": {
         "name": "Pager Alert",
         "tag": "Action",
-        "description": "End your turn and force the next player to take an extra draw.",
+        "description": "Force the next player to take an extra draw. You still draw to end your turn.",
         "themeClass": "theme-attack",
         "group": "action",
         "turnPlayable": True,
@@ -167,6 +167,11 @@ def sanitize_room_code(value: str) -> str:
     return "".join(character for character in (value or "").upper() if character.isalpha())[:6]
 
 
+def sanitize_session_token(value: Optional[str]) -> str:
+    token = "".join(character for character in (value or "").strip() if character.isalnum())
+    return token[:64]
+
+
 def make_card_payload(card_key: str) -> dict:
     card = CARD_CATALOG[card_key]
     return {
@@ -185,8 +190,9 @@ def make_card_payload(card_key: str) -> dict:
 @dataclass
 class Player:
     id: str
+    session_token: str
     name: str
-    connection: "WebSocketConnection"
+    connection: Optional["WebSocketConnection"]
     hand: list[str] = field(default_factory=list)
     alive: bool = True
     connected: bool = True
@@ -322,11 +328,19 @@ class GameRoom:
         return [player for player in self.players if player.connected]
 
     def alive_players(self) -> list[Player]:
-        return [player for player in self.players if player.connected and player.alive]
+        return [player for player in self.players if player.alive]
 
     def get_player(self, player_id: Optional[str]) -> Optional[Player]:
         for player in self.players:
             if player.id == player_id:
+                return player
+        return None
+
+    def get_player_by_session_token(self, session_token: str) -> Optional[Player]:
+        if not session_token:
+            return None
+        for player in self.players:
+            if player.session_token == session_token:
                 return player
         return None
 
@@ -363,14 +377,42 @@ class GameRoom:
         connected = self.connected_players()
         self.host_id = connected[0].id if connected else None
 
-    def add_player(self, connection: WebSocketConnection, name: str) -> Player:
-        player = Player(id=uuid.uuid4().hex[:8], name=name, connection=connection)
+    def attach_player_connection(self, player: Player, connection: WebSocketConnection) -> None:
+        player.connection = connection
+        player.connected = True
+        connection.player_id = player.id
+        connection.room_code = self.code
+
+    def add_player(
+        self, connection: WebSocketConnection, name: str, session_token: Optional[str] = None
+    ) -> Player:
+        player = Player(
+            id=uuid.uuid4().hex[:8],
+            session_token=session_token or uuid.uuid4().hex,
+            name=name,
+            connection=None,
+        )
         self.players.append(player)
         if not self.host_id:
             self.host_id = player.id
-        connection.player_id = player.id
-        connection.room_code = self.code
+        self.attach_player_connection(player, connection)
         self.add_log(f"{player.name} joined room {self.code}.")
+        return player
+
+    def reconnect_player(
+        self, connection: WebSocketConnection, name: str, session_token: str
+    ) -> Optional[Player]:
+        player = self.get_player_by_session_token(session_token)
+        if not player:
+            return None
+        if player.connected:
+            raise ValueError("That player is already connected in another tab.")
+
+        player.name = name or player.name
+        self.attach_player_connection(player, connection)
+        if not self.host_id:
+            self.host_id = player.id
+        self.add_log(f"{player.name} rejoined room {self.code}.")
         return player
 
     def build_deck(self) -> list[str]:
@@ -416,14 +458,17 @@ class GameRoom:
         self.current_player_id = self.players[0].id
         self.add_log("A new Exploding Productions match began.")
 
-    def remove_player(self, player_id: str) -> bool:
+    def leave_player(self, player_id: str) -> bool:
         player = self.get_player(player_id)
         if not player:
             return not self.connected_players()
 
         player.connected = False
-        player.connection.room_code = None
-        player.connection.player_id = None
+        if player.connection:
+            player.connection.room_code = None
+            player.connection.player_id = None
+        player.connection = None
+        player.session_token = ""
 
         if not self.started:
             self.players = [item for item in self.players if item.id != player.id]
@@ -434,13 +479,36 @@ class GameRoom:
         self.cleanup_pending_for_departure(player.id)
 
         if player.alive:
-            self.add_log(f"{player.name} disconnected mid-match.")
-            self.eliminate_player(player, reason="disconnect")
+            self.eliminate_player(player, reason="leave")
         else:
-            self.add_log(f"{player.name} disconnected.")
+            self.add_log(f"{player.name} left the room.")
 
         self.ensure_host()
         return not self.connected_players()
+
+    def disconnect_player(self, player_id: str) -> bool:
+        player = self.get_player(player_id)
+        if not player:
+            return False
+
+        player.connected = False
+        if player.connection:
+            player.connection.room_code = None
+            player.connection.player_id = None
+        player.connection = None
+
+        if not self.started:
+            self.add_log(f"{player.name} disconnected from the lobby.")
+            self.ensure_host()
+            return False
+
+        if player.alive:
+            self.add_log(f"{player.name} disconnected. Their seat is reserved until they reconnect.")
+        else:
+            self.add_log(f"{player.name} disconnected after being eliminated.")
+
+        self.ensure_host()
+        return False
 
     def cleanup_pending_for_departure(self, player_id: str) -> None:
         if self.pending_reinsert_player_id == player_id:
@@ -535,6 +603,8 @@ class GameRoom:
             self.add_log(f"{player.name} was knocked out by a Production Crash.")
         elif reason == "disconnect":
             self.add_log(f"{player.name} is out because they left the table.")
+        elif reason == "leave":
+            self.add_log(f"{player.name} left the match and is out.")
 
         if self.current_player_id == player.id:
             next_player = self.next_alive_after(player.id)
@@ -672,7 +742,7 @@ class GameRoom:
             "target_id": target_id,
             "requested_key": None,
             "discard_key": None,
-            "auto_draw_after": card_key not in {"skip", "attack"},
+            "auto_draw_after": card_key != "skip",
             "response_queue": [],
             "response_index": 0,
             "current_responder_id": None,
@@ -900,7 +970,6 @@ class GameRoom:
                 return messages
             next_player.required_draws += 1
             self.add_log(f"{actor.name} attacked. {next_player.name} must draw {next_player.required_draws} cards.")
-            self.advance_turn(actor.id)
             return messages
 
         if kind == "mixUp":
@@ -1035,8 +1104,11 @@ class GameRoom:
             winner = self.get_player(self.winner_id)
             turn_label = f"{winner.name} wins the match"
         elif self.started and current_player:
-            draws = current_player.required_draws
-            turn_label = f"{current_player.name}'s turn • {draws} draw{'s' if draws != 1 else ''} remaining"
+            if current_player.connected:
+                draws = current_player.required_draws
+                turn_label = f"{current_player.name}'s turn • {draws} draw{'s' if draws != 1 else ''} remaining"
+            else:
+                turn_label = f"Waiting for {current_player.name} to reconnect"
 
         pending_choice = None
         prompt_text = "Wait for another player, then have the host start the match."
@@ -1080,7 +1152,10 @@ class GameRoom:
             else:
                 prompt_text = "Play one action or combo, or draw immediately to end your turn."
         elif self.started:
-            prompt_text = "Watch the incident queue and wait for your turn."
+            if current_player and not current_player.connected:
+                prompt_text = f"Waiting for {current_player.name} to reconnect before the match continues."
+            else:
+                prompt_text = "Watch the incident queue and wait for your turn."
 
         discard_top = None
         if self.discard:
@@ -1088,6 +1163,9 @@ class GameRoom:
 
         return {
             "roomCode": self.code,
+            "started": self.started,
+            "winnerId": self.winner_id,
+            "playerToken": viewer.session_token,
             "phaseLabel": phase_label,
             "turnLabel": turn_label,
             "promptText": prompt_text,
@@ -1125,7 +1203,7 @@ class GameRoom:
 
     def broadcast_state(self) -> None:
         for player in list(self.players):
-            if not player.connected:
+            if not player.connected or not player.connection:
                 continue
             try:
                 player.connection.send_json({"type": "state", "state": self.serialize_for(player)})
@@ -1177,7 +1255,12 @@ class RoomManager:
                 if action == "create_room":
                     self.create_room(connection, message.get("name", ""))
                 elif action == "join_room":
-                    self.join_room(connection, message.get("name", ""), message.get("roomCode", ""))
+                    self.join_room(
+                        connection,
+                        message.get("name", ""),
+                        message.get("roomCode", ""),
+                        message.get("playerToken", ""),
+                    )
                 elif action == "leave_room":
                     self.leave_room(connection)
                 elif action == "start_game":
@@ -1216,20 +1299,32 @@ class RoomManager:
         self.send_info(connection, f"Room {code} created. Share the code so someone can join.")
         room.broadcast_state()
 
-    def join_room(self, connection: WebSocketConnection, name: str, room_code: str) -> None:
+    def join_room(
+        self, connection: WebSocketConnection, name: str, room_code: str, player_token: str
+    ) -> None:
         if connection.room_code:
             raise ValueError("Leave your current room before joining a new one.")
 
         code = sanitize_room_code(room_code)
+        reconnect_token = sanitize_session_token(player_token)
+        clean_name = sanitize_name(name)
         room = self.rooms.get(code)
         if not room:
             raise ValueError("That room code was not found.")
+
+        if reconnect_token:
+            player = room.reconnect_player(connection, clean_name, reconnect_token)
+            if player:
+                self.send_info(connection, f"Rejoined room {code}.")
+                room.broadcast_state()
+                return
+
         if room.started and not room.winner_id:
             raise ValueError("That room is already in the middle of a match.")
         if len(room.connected_players()) >= MAX_ROOM_SIZE:
             raise ValueError("That room is full.")
 
-        room.add_player(connection, sanitize_name(name))
+        room.add_player(connection, clean_name)
         self.send_info(connection, f"Joined room {code}.")
         room.broadcast_state()
 
@@ -1245,7 +1340,7 @@ class RoomManager:
             connection.send_json({"type": "left_room"})
             return
 
-        empty = room.remove_player(connection.player_id)
+        empty = room.leave_player(connection.player_id)
         connection.send_json({"type": "left_room"})
         if empty:
             self.rooms.pop(room.code, None)
@@ -1334,8 +1429,8 @@ class RoomManager:
                 connection.close()
                 return
 
-            empty = room.remove_player(connection.player_id)
-            if empty:
+            removable = room.disconnect_player(connection.player_id)
+            if removable:
                 self.rooms.pop(room.code, None)
             else:
                 room.broadcast_state()

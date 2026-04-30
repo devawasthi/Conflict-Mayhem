@@ -13,7 +13,10 @@ const state = {
 
 const LOG_COLLAPSE_COUNT = 5;
 const CRASH_OVERLAY_DURATION_MS = 2600;
+const PLAYER_NAME_STORAGE_KEY = "exploding-productions-player-name";
+const ROOM_TOKEN_STORAGE_PREFIX = "exploding-productions-room-token:";
 let crashOverlayTimer = null;
+let attemptedRoomRestore = false;
 
 const CARD_VISUALS = {
   hotPotato: { symbol: "!!", label: "Production Crash" },
@@ -49,9 +52,12 @@ const CARD_ART = {
 
 const ui = {
   connectionPill: document.querySelector("#connection-pill"),
+  setupGrid: document.querySelector("#setup-grid"),
   nameInput: document.querySelector("#name-input"),
   roomInput: document.querySelector("#room-input"),
   setupStatus: document.querySelector("#setup-status"),
+  roomAccessPanel: document.querySelector("#room-access-panel"),
+  setupCompactNote: document.querySelector("#setup-compact-note"),
   createRoomBtn: document.querySelector("#create-room-btn"),
   joinRoomBtn: document.querySelector("#join-room-btn"),
   leaveRoomBtn: document.querySelector("#leave-room-btn"),
@@ -83,7 +89,91 @@ const ui = {
   crashOverlayText: document.querySelector("#crash-overlay-text"),
 };
 
-const defaultName = `Dev-${Math.floor(Math.random() * 900 + 100)}`;
+function readStorage(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (_error) {
+    // Ignore unavailable storage.
+  }
+}
+
+function removeStorage(key) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch (_error) {
+    // Ignore unavailable storage.
+  }
+}
+
+function sanitizeRoomCode(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .slice(0, 6);
+}
+
+function getStoredPlayerName() {
+  return readStorage(PLAYER_NAME_STORAGE_KEY);
+}
+
+function rememberPlayerName(name) {
+  const cleanName = String(name || "").trim();
+  if (cleanName) {
+    writeStorage(PLAYER_NAME_STORAGE_KEY, cleanName);
+  }
+}
+
+function roomTokenStorageKey(roomCode) {
+  return `${ROOM_TOKEN_STORAGE_PREFIX}${sanitizeRoomCode(roomCode)}`;
+}
+
+function getStoredRoomToken(roomCode) {
+  const cleanRoomCode = sanitizeRoomCode(roomCode);
+  if (!cleanRoomCode) {
+    return "";
+  }
+  return readStorage(roomTokenStorageKey(cleanRoomCode)) || "";
+}
+
+function rememberRoomToken(roomCode, playerToken) {
+  const cleanRoomCode = sanitizeRoomCode(roomCode);
+  if (cleanRoomCode && playerToken) {
+    writeStorage(roomTokenStorageKey(cleanRoomCode), playerToken);
+  }
+}
+
+function forgetRoomToken(roomCode) {
+  const cleanRoomCode = sanitizeRoomCode(roomCode);
+  if (cleanRoomCode) {
+    removeStorage(roomTokenStorageKey(cleanRoomCode));
+  }
+}
+
+function roomCodeFromUrl() {
+  const url = new URL(window.location.href);
+  return sanitizeRoomCode(url.searchParams.get("room") || "");
+}
+
+function updateRoomUrl(roomCode) {
+  const url = new URL(window.location.href);
+  const cleanRoomCode = sanitizeRoomCode(roomCode);
+  if (cleanRoomCode) {
+    url.searchParams.set("room", cleanRoomCode);
+  } else {
+    url.searchParams.delete("room");
+  }
+  window.history.replaceState({}, "", url);
+}
+
+const defaultName = getStoredPlayerName() || `Dev-${Math.floor(Math.random() * 900 + 100)}`;
 ui.nameInput.value = defaultName;
 
 function socketUrl() {
@@ -167,6 +257,11 @@ function handleMessage(raw) {
     const previousRoom = state.room;
     const previousRoomCode = previousRoom?.roomCode || null;
     state.room = message.state;
+    if (state.room?.roomCode) {
+      ui.roomInput.value = state.room.roomCode;
+      updateRoomUrl(state.room.roomCode);
+      rememberActiveIdentity(state.room.roomCode, state.room.playerToken);
+    }
     reconcileLocalState();
     handleRoomTransition(previousRoom, state.room);
     render();
@@ -191,6 +286,11 @@ function handleMessage(raw) {
   }
 
   if (message.type === "left_room") {
+    const previousRoomCode = state.room?.roomCode || roomCodeFromUrl();
+    if (previousRoomCode) {
+      forgetRoomToken(previousRoomCode);
+    }
+    updateRoomUrl("");
     state.room = null;
     resetLocalInteraction();
     state.logExpanded = false;
@@ -332,8 +432,47 @@ function getPlayerName() {
   return value || defaultName;
 }
 
+function rememberActiveIdentity(roomCode, playerToken) {
+  const playerName = getPlayerName();
+  rememberPlayerName(playerName);
+  if (roomCode && playerToken) {
+    rememberRoomToken(roomCode, playerToken);
+  }
+}
+
+function restoreRoomFromUrl() {
+  if (attemptedRoomRestore) {
+    return;
+  }
+  attemptedRoomRestore = true;
+
+  const roomCode = roomCodeFromUrl();
+  if (!roomCode) {
+    return;
+  }
+
+  ui.roomInput.value = roomCode;
+  const playerToken = getStoredRoomToken(roomCode);
+
+  if (!playerToken) {
+    state.notice = `Room ${roomCode} is loaded from the link. Enter your name and join when you're ready.`;
+    state.noticeTone = "info";
+    return;
+  }
+
+  state.notice = `Reconnecting to room ${roomCode}...`;
+  state.noticeTone = "info";
+  send({
+    type: "join_room",
+    name: getPlayerName(),
+    roomCode,
+    playerToken,
+  });
+}
+
 function createRoom() {
   resetLocalInteraction();
+  rememberPlayerName(getPlayerName());
   send({
     type: "create_room",
     name: getPlayerName(),
@@ -342,10 +481,13 @@ function createRoom() {
 
 function joinRoom() {
   resetLocalInteraction();
+  const roomCode = sanitizeRoomCode(ui.roomInput.value);
+  rememberPlayerName(getPlayerName());
   send({
     type: "join_room",
     name: getPlayerName(),
-    roomCode: ui.roomInput.value.trim().toUpperCase(),
+    roomCode,
+    playerToken: getStoredRoomToken(roomCode),
   });
 }
 
@@ -592,8 +734,13 @@ function getCardArt(cardKey) {
   return CARD_ART[cardKey] || null;
 }
 
+function isLiveMatch() {
+  return Boolean(state.room?.started && !state.room?.winnerId);
+}
+
 function render() {
   renderConnection();
+  renderSetupPanel();
   renderRoomMeta();
   renderDrawControls();
   renderPlayers();
@@ -612,6 +759,19 @@ function renderConnection() {
         ? "Offline"
         : "Connecting";
   ui.connectionPill.className = `status-pill ${state.socketStatus}`;
+}
+
+function renderSetupPanel() {
+  const liveMatch = isLiveMatch();
+  ui.setupGrid.classList.toggle("match-live", liveMatch);
+  ui.setupCard.classList.toggle("compact", liveMatch);
+  ui.roomAccessPanel.hidden = liveMatch;
+  ui.setupCompactNote.hidden = !liveMatch;
+
+  if (liveMatch) {
+    ui.setupCompactNote.textContent =
+      "Room access is tucked away while a live match is in progress. Use the room panel for the active code and room controls.";
+  }
 }
 
 function renderRoomMeta() {
@@ -1112,6 +1272,10 @@ ui.nameInput.addEventListener("keydown", (event) => {
     createRoom();
   }
 });
+ui.nameInput.addEventListener("change", () => {
+  rememberPlayerName(getPlayerName());
+});
 
 connectSocket();
+restoreRoomFromUrl();
 render();

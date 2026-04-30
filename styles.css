@@ -153,6 +153,10 @@ h1 {
   grid-template-columns: 360px minmax(0, 1fr);
 }
 
+.setup-grid.match-live {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .board-grid {
   grid-template-columns: 320px minmax(0, 1fr) 340px;
 }
@@ -220,6 +224,28 @@ h1 {
   background: rgba(111, 224, 255, 0.08);
   color: var(--text);
   line-height: 1.45;
+}
+
+.setup-card.compact {
+  padding-top: 18px;
+}
+
+.setup-grid.match-live .room-card {
+  order: 1;
+}
+
+.setup-grid.match-live .setup-card {
+  order: 2;
+}
+
+.setup-compact-note {
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 212, 106, 0.18);
+  background: rgba(255, 212, 106, 0.08);
+  color: var(--text);
+  line-height: 1.5;
 }
 
 .divider::before {

@@ -24,7 +24,7 @@ Open that URL in two browser tabs or two different browsers to test multiplayer.
 - If you draw a `Production Crash` with `Blame The Intern`, both cards are discarded.
 - `Nope` is a reaction card that cancels the latest action or combo unless another `Nope` flips it back.
 - `Revert Commit` ends your turn immediately without the normal draw.
-- `Pager Alert` ends your turn without the normal draw and makes the next player take one extra required draw.
+- `Pager Alert` adds one extra required draw to the next player, and you still draw to end your turn.
 - `Peer Review` shows you the next three cards privately.
 - `Deploy To Staging` shuffles the deck.
 - `Project Manager` steals a random card from a chosen opponent.
