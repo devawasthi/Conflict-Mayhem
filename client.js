@@ -9,13 +9,19 @@ const state = {
   pendingLocalAction: null,
   logExpanded: false,
   crashOverlay: null,
+  moment: null,
+  momentQueue: [],
+  peerReview: null,
+  discardBrowserOpen: false,
 };
 
-const LOG_COLLAPSE_COUNT = 5;
+const LOG_COLLAPSE_COUNT = 4;
 const CRASH_OVERLAY_DURATION_MS = 2600;
+const MOMENT_DURATION_MS = 2200;
 const PLAYER_NAME_STORAGE_KEY = "exploding-productions-player-name";
 const ROOM_TOKEN_STORAGE_PREFIX = "exploding-productions-room-token:";
 let crashOverlayTimer = null;
+let momentTimer = null;
 let attemptedRoomRestore = false;
 
 const CARD_VISUALS = {
@@ -50,6 +56,30 @@ const CARD_ART = {
   candy: "assets/cards/overflow-tab.webp",
 };
 
+const CARD_ART_TREATMENTS = {
+  cookie: {
+    positionX: "41%",
+    scale: 0.89,
+  },
+  popcorn: {
+    positionX: "59%",
+    scale: 0.89,
+  },
+};
+
+const CARD_LABEL_TO_KEY = Object.fromEntries(
+  Object.entries(CARD_VISUALS).map(([key, value]) => [value.label, key]),
+);
+
+const ACTION_MOMENT_COPY = {
+  nope: "A risky move just got shut down.",
+  peek: "The next three cards are being inspected.",
+  skip: "The draw step was intentionally skipped.",
+  attack: "Extra pressure just got passed to the next player.",
+  mixUp: "The deck order is getting scrambled.",
+  swipe: "A random card is being yanked from another hand.",
+};
+
 const ui = {
   connectionPill: document.querySelector("#connection-pill"),
   setupGrid: document.querySelector("#setup-grid"),
@@ -77,8 +107,9 @@ const ui = {
   turnTitle: document.querySelector("#turn-title"),
   deckCount: document.querySelector("#deck-count"),
   discardName: document.querySelector("#discard-name"),
-  discardArt: document.querySelector("#discard-art"),
-  discardText: document.querySelector("#discard-text"),
+  discardPileBtn: document.querySelector("#discard-pile-btn"),
+  discardPile: document.querySelector("#discard-pile"),
+  discardHint: document.querySelector("#discard-hint"),
   promptBody: document.querySelector("#prompt-body"),
   logFeed: document.querySelector("#log-feed"),
   comboBar: document.querySelector("#combo-bar"),
@@ -87,6 +118,19 @@ const ui = {
   crashOverlay: document.querySelector("#crash-overlay"),
   crashOverlayTitle: document.querySelector("#crash-overlay-title"),
   crashOverlayText: document.querySelector("#crash-overlay-text"),
+  momentOverlay: document.querySelector("#moment-overlay"),
+  momentKicker: document.querySelector("#moment-kicker"),
+  momentTitle: document.querySelector("#moment-title"),
+  momentText: document.querySelector("#moment-text"),
+  momentArt: document.querySelector("#moment-art"),
+  reviewOverlay: document.querySelector("#review-overlay"),
+  reviewMessage: document.querySelector("#review-message"),
+  reviewCardGrid: document.querySelector("#review-card-grid"),
+  reviewCloseBtn: document.querySelector("#review-close-btn"),
+  discardBrowserOverlay: document.querySelector("#discard-browser-overlay"),
+  discardBrowserMessage: document.querySelector("#discard-browser-message"),
+  discardBrowserGrid: document.querySelector("#discard-browser-grid"),
+  discardBrowserCloseBtn: document.querySelector("#discard-browser-close-btn"),
 };
 
 function readStorage(key) {
@@ -212,6 +256,10 @@ function connectSocket() {
     state.room = null;
     resetLocalInteraction();
     hideCrashOverlay();
+    state.momentQueue = [];
+    hideMoment();
+    hidePeerReview();
+    closeDiscardBrowser();
     state.notice = "Connection closed. Refresh the page or reconnect by joining a room again.";
     render();
   });
@@ -271,6 +319,17 @@ function handleMessage(raw) {
     return;
   }
 
+  if (message.type === "peer_review_result") {
+    state.notice = message.message || "Peer Review is ready.";
+    state.noticeTone = "info";
+    showPeerReview({
+      message: message.message || "Peer Review is ready.",
+      cards: message.cards || [],
+    });
+    render();
+    return;
+  }
+
   if (message.type === "info") {
     state.notice = message.message;
     state.noticeTone = "info";
@@ -295,6 +354,10 @@ function handleMessage(raw) {
     resetLocalInteraction();
     state.logExpanded = false;
     hideCrashOverlay();
+    state.momentQueue = [];
+    hideMoment();
+    hidePeerReview();
+    closeDiscardBrowser();
     state.notice = "You left the room.";
     state.noticeTone = "info";
     render();
@@ -305,19 +368,34 @@ function handleRoomTransition(previousRoom, nextRoom) {
   if (!nextRoom) {
     state.logExpanded = false;
     hideCrashOverlay();
+    state.momentQueue = [];
+    hideMoment();
+    hidePeerReview();
+    closeDiscardBrowser();
     return;
   }
 
   const sameRoom = previousRoom?.roomCode && previousRoom.roomCode === nextRoom.roomCode;
   if (!sameRoom) {
     state.logExpanded = false;
+    state.momentQueue = [];
+    hideMoment();
+    hidePeerReview();
+    closeDiscardBrowser();
     return;
   }
 
-  const crashEntry = getNewLogEntries(previousRoom?.log || [], nextRoom.log || []).find(isCrashMomentLog);
+  const newEntries = getNewLogEntries(previousRoom?.log || [], nextRoom.log || []);
+  const crashEntry = newEntries.find(isCrashMomentLog);
   if (crashEntry) {
     showCrashOverlay(buildCrashOverlayPayload(crashEntry));
   }
+
+  const actionMoment = [...newEntries].map(buildActionMoment).find(Boolean);
+  const drawMoment = buildDrawMoment(previousRoom, nextRoom);
+
+  queueMoment(actionMoment);
+  queueMoment(drawMoment);
 }
 
 function getNewLogEntries(previousLog, nextLog) {
@@ -364,6 +442,191 @@ function buildCrashOverlayPayload(entry) {
   };
 }
 
+function buildCountMap(hand) {
+  const counts = new Map();
+  (hand || []).forEach((card) => {
+    counts.set(card.key, card.count);
+  });
+  return counts;
+}
+
+function getAddedHandCards(previousHand, nextHand) {
+  const previousCounts = buildCountMap(previousHand);
+  const additions = [];
+
+  (nextHand || []).forEach((card) => {
+    const previousCount = previousCounts.get(card.key) || 0;
+    const delta = card.count - previousCount;
+    for (let index = 0; index < delta; index += 1) {
+      additions.push(card.key);
+    }
+  });
+
+  return additions;
+}
+
+function buildDrawMoment(previousRoom, nextRoom) {
+  if (!previousRoom?.started || !nextRoom?.started) {
+    return null;
+  }
+
+  const addedCards = getAddedHandCards(previousRoom.hand, nextRoom.hand);
+  if (addedCards.length !== 1) {
+    return null;
+  }
+
+  const cardKey = addedCards[0];
+  return {
+    kicker: "Card Added",
+    title: CARD_VISUALS[cardKey]?.label || "New Card",
+    text: "This card was added to your hand.",
+    cardKey,
+  };
+}
+
+function buildActionMoment(entry) {
+  const playedMatch = entry.match(/^(.*?) played (.+)\.$/);
+  if (!playedMatch) {
+    return null;
+  }
+
+  const actorName = playedMatch[1];
+  const label = playedMatch[2];
+  const cardKey = CARD_LABEL_TO_KEY[label];
+
+  if (!cardKey || !ACTION_MOMENT_COPY[cardKey]) {
+    return null;
+  }
+
+  return {
+    kicker: actorName,
+    title: label,
+    text: ACTION_MOMENT_COPY[cardKey],
+    cardKey,
+  };
+}
+
+function presentMoment(payload) {
+  if (!payload) {
+    return;
+  }
+
+  if (momentTimer) {
+    window.clearTimeout(momentTimer);
+    momentTimer = null;
+  }
+
+  state.moment = payload;
+  momentTimer = window.setTimeout(() => {
+    hideMoment();
+    renderMoment();
+  }, MOMENT_DURATION_MS);
+  renderMoment();
+}
+
+function queueMoment(payload) {
+  if (!payload) {
+    return;
+  }
+
+  if (state.moment) {
+    state.momentQueue.push(payload);
+    return;
+  }
+
+  presentMoment(payload);
+}
+
+function hideMoment() {
+  if (momentTimer) {
+    window.clearTimeout(momentTimer);
+    momentTimer = null;
+  }
+
+  state.moment = null;
+
+  if (state.momentQueue.length > 0) {
+    const nextMoment = state.momentQueue.shift();
+    presentMoment(nextMoment);
+    return;
+  }
+
+  renderMoment();
+}
+
+function showPeerReview(payload) {
+  state.peerReview = payload;
+  renderPeerReview();
+}
+
+function hidePeerReview() {
+  state.peerReview = null;
+  renderPeerReview();
+}
+
+function getKnownCardPayload(cardKey) {
+  if (!state.room) {
+    return null;
+  }
+
+  const sources = [
+    ...(state.room.hand || []),
+    ...(state.room.requestOptions || []),
+    ...(state.room.discardPile || []),
+    ...(state.room.discardChoices || []),
+  ];
+
+  return sources.find((card) => card.key === cardKey) || null;
+}
+
+function getDiscardBrowserCards() {
+  const basePile = Array.isArray(state.room?.discardPile) ? [...state.room.discardPile] : [];
+
+  if (state.pendingLocalAction?.kind !== "five") {
+    return basePile;
+  }
+
+  const pendingCards = state.pendingLocalAction.cardKeys.map((cardKey, index) => {
+    const knownCard = getKnownCardPayload(cardKey);
+    return {
+      ...(knownCard || {
+        key: cardKey,
+        name: CARD_VISUALS[cardKey]?.label || "Card",
+        tag: "Desk Loot",
+        themeClass: "",
+      }),
+      reclaimable: true,
+      discardIndex: -(index + 1),
+      provisional: true,
+    };
+  });
+
+  return [...pendingCards, ...basePile];
+}
+
+function canBrowseDiscardPile() {
+  return (
+    !!state.room &&
+    state.pendingLocalAction?.kind === "five" &&
+    getDiscardBrowserCards().some((card) => card.reclaimable)
+  );
+}
+
+function openDiscardBrowser() {
+  if (!canBrowseDiscardPile()) {
+    return;
+  }
+  state.discardBrowserOpen = true;
+  renderDiscardBrowser();
+  renderCenter();
+}
+
+function closeDiscardBrowser() {
+  state.discardBrowserOpen = false;
+  renderDiscardBrowser();
+  renderCenter();
+}
+
 function showCrashOverlay(payload) {
   hideCrashOverlay();
   state.crashOverlay = payload;
@@ -405,12 +668,14 @@ function reconcileLocalState() {
 
   if (state.room.pendingChoice || !state.room.canPlay) {
     state.pendingLocalAction = null;
+    state.discardBrowserOpen = false;
   }
 }
 
 function resetLocalInteraction() {
   state.selectedCounts = {};
   state.pendingLocalAction = null;
+  state.discardBrowserOpen = false;
 }
 
 function clearSelections() {
@@ -734,6 +999,33 @@ function getCardArt(cardKey) {
   return CARD_ART[cardKey] || null;
 }
 
+function getCardArtTreatment(cardKey) {
+  return CARD_ART_TREATMENTS[cardKey] || { positionX: "50%", scale: 1 };
+}
+
+function getCardBackgroundStyle(cardKey) {
+  const artwork = getCardArt(cardKey);
+  if (!artwork) {
+    return "";
+  }
+
+  const treatment = getCardArtTreatment(cardKey);
+  return [
+    `background-image: url('${artwork}')`,
+    `background-position: ${treatment.positionX} top`,
+    `background-size: ${Math.round(treatment.scale * 100)}% auto`,
+  ].join("; ");
+}
+
+function getCardImageStyle(cardKey) {
+  const treatment = getCardArtTreatment(cardKey);
+  return [
+    `object-position: ${treatment.positionX} top`,
+    `transform: scale(${treatment.scale})`,
+    "transform-origin: center top",
+  ].join("; ");
+}
+
 function isLiveMatch() {
   return Boolean(state.room?.started && !state.room?.winnerId);
 }
@@ -749,6 +1041,9 @@ function render() {
   renderComboBar();
   renderHand();
   renderCrashOverlay();
+  renderMoment();
+  renderPeerReview();
+  renderDiscardBrowser();
 }
 
 function renderConnection() {
@@ -835,7 +1130,7 @@ function getDrawUiState() {
     return {
       disabled: !state.room.canDraw,
       label: `Draw Card (${drawsLeft} left)`,
-      status: `Pager Alert is active. You still need to resolve ${drawsLeft} draws this turn.`,
+      status: `Extra draw pressure is active. You still need to resolve ${drawsLeft} draws this turn.`,
     };
   }
 
@@ -911,8 +1206,18 @@ function renderCenter() {
   if (!state.room) {
     ui.turnTitle.textContent = "Waiting For Players";
     ui.deckCount.textContent = "0 cards";
-    ui.discardName.textContent = "Nothing yet";
-    ui.discardText.textContent = "Played cards and spent combos will land here.";
+    ui.discardName.textContent = "0 cards";
+    if (ui.discardPile) {
+      ui.discardPile.innerHTML = '<div class="discard-empty">Discard pile is empty.</div>';
+    }
+    if (ui.discardHint) {
+      ui.discardHint.textContent = "Played cards stack here.";
+    }
+    if (ui.discardPileBtn) {
+      ui.discardPileBtn.disabled = true;
+      ui.discardPileBtn.classList.remove("active");
+      ui.discardPileBtn.setAttribute("aria-expanded", "false");
+    }
     ui.promptBody.textContent = "Start a room to begin.";
     return;
   }
@@ -920,31 +1225,55 @@ function renderCenter() {
   ui.turnTitle.textContent = state.room.turnLabel;
   ui.deckCount.textContent = `${state.room.deckCount} cards`;
 
-  if (state.room.discardTop) {
-    const visual = getCardVisual(state.room.discardTop.key);
-    const artwork = getCardArt(state.room.discardTop.key);
-    ui.discardName.innerHTML = `<span class="inline-symbol" aria-hidden="true">${escapeHtml(visual.symbol)}</span>${escapeHtml(state.room.discardTop.name)}`;
-    if (ui.discardArt) {
-      if (artwork) {
-        ui.discardArt.hidden = false;
-        ui.discardArt.style.backgroundImage = `url("${artwork}")`;
-      } else {
-        ui.discardArt.hidden = true;
-        ui.discardArt.style.backgroundImage = "";
-      }
-    }
-    ui.discardText.textContent = state.room.discardTop.description;
-  } else {
-    ui.discardName.textContent = "Nothing yet";
-    if (ui.discardArt) {
-      ui.discardArt.hidden = true;
-      ui.discardArt.style.backgroundImage = "";
-    }
-    ui.discardText.textContent = "Played cards and spent combos will land here.";
-  }
-
   const pendingChoice = state.room.pendingChoice;
   const localAction = state.pendingLocalAction;
+  const discardPile =
+    localAction?.kind === "five"
+      ? getDiscardBrowserCards()
+      : Array.isArray(state.room.discardPile)
+        ? state.room.discardPile
+        : [];
+  const discardCount =
+    localAction?.kind === "five"
+      ? discardPile.length
+      : state.room.discardCount || discardPile.length;
+  ui.discardName.textContent = `${discardCount} card${discardCount === 1 ? "" : "s"}`;
+
+  if (ui.discardPile) {
+    const preview = discardPile.slice(0, 4).reverse();
+    if (preview.length === 0) {
+      ui.discardPile.innerHTML = '<div class="discard-empty">Discard pile is empty.</div>';
+      ui.discardPile.classList.add("empty");
+    } else {
+      ui.discardPile.classList.remove("empty");
+      ui.discardPile.innerHTML = preview
+        .map((card, index) => {
+          const offsetClass = `offset-${index}`;
+          if (getCardArt(card.key)) {
+            return `<div class="discard-preview-card ${offsetClass}" style="${getCardBackgroundStyle(card.key)}" aria-hidden="true"></div>`;
+          }
+          return `<div class="discard-preview-card discard-preview-fallback ${offsetClass}" aria-hidden="true">${escapeHtml(getCardVisual(card.key).symbol)}</div>`;
+        })
+        .join("");
+    }
+  }
+
+  const discardPileInteractive = canBrowseDiscardPile();
+  if (ui.discardPileBtn) {
+    ui.discardPileBtn.disabled = !discardPileInteractive;
+    ui.discardPileBtn.classList.toggle("active", discardPileInteractive);
+    ui.discardPileBtn.setAttribute("aria-expanded", String(state.discardBrowserOpen && discardPileInteractive));
+  }
+
+  if (ui.discardHint) {
+    if (discardPileInteractive) {
+      ui.discardHint.textContent = "Click the discard pile to reclaim 1 card.";
+    } else if (discardCount === 0) {
+      ui.discardHint.textContent = "Played cards stack here.";
+    } else {
+      ui.discardHint.textContent = "Recent plays stack here.";
+    }
+  }
 
   if (pendingChoice?.kind === "reinsert") {
     ui.promptBody.innerHTML = `
@@ -1045,22 +1374,8 @@ function renderCenter() {
   }
 
   if (localAction?.kind === "five") {
-    ui.promptBody.innerHTML = `
-      <div>Choose a discard pile card to reclaim with <strong>5 Different Tools</strong>.</div>
-      <div class="choice-grid">
-        ${state.room.discardChoices
-          .map(
-            (option) =>
-              `<button class="choice-btn choice-with-symbol" data-discard="${option.key}"><span class="inline-symbol" aria-hidden="true">${escapeHtml(getCardVisual(option.key).symbol)}</span>${escapeHtml(option.name)}</button>`,
-          )
-          .join("")}
-      </div>
-      <div class="action-row wrap">
-        <button id="cancel-local-btn" class="ghost-btn">Cancel</button>
-      </div>
-    `;
-
-    if (state.room.discardChoices.length === 0) {
+    const reclaimableCards = (state.room.discardPile || []).filter((card) => card.reclaimable);
+    if (reclaimableCards.length === 0) {
       ui.promptBody.innerHTML = `
         <div>The discard pile does not have a reclaimable card yet.</div>
         <div class="action-row wrap">
@@ -1068,9 +1383,16 @@ function renderCenter() {
         </div>
       `;
     } else {
-      ui.promptBody.querySelectorAll("[data-discard]").forEach((button) => {
-        button.addEventListener("click", () => chooseDiscardCard(button.dataset.discard));
-      });
+      ui.promptBody.innerHTML = `
+        <div>Use <strong>5 Different Tools</strong>, then click the discard pile to choose 1 card to reclaim.</div>
+        <div class="action-row wrap">
+          <button id="open-discard-browser-btn" class="secondary-btn">Open Discard Pile</button>
+          <button id="cancel-local-btn" class="ghost-btn">Cancel</button>
+        </div>
+      `;
+      ui.promptBody
+        .querySelector("#open-discard-browser-btn")
+        .addEventListener("click", openDiscardBrowser);
     }
 
     ui.promptBody.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
@@ -1134,6 +1456,136 @@ function renderCrashOverlay() {
   ui.crashOverlay.setAttribute("aria-hidden", "false");
   ui.crashOverlayTitle.textContent = state.crashOverlay.title;
   ui.crashOverlayText.textContent = state.crashOverlay.text;
+}
+
+function renderMoment() {
+  if (!ui.momentOverlay) {
+    return;
+  }
+
+  if (!state.moment) {
+    ui.momentOverlay.hidden = true;
+    ui.momentOverlay.setAttribute("aria-hidden", "true");
+    if (ui.momentArt) {
+      ui.momentArt.hidden = true;
+      ui.momentArt.style.backgroundImage = "";
+    }
+    return;
+  }
+
+  ui.momentOverlay.hidden = false;
+  ui.momentOverlay.setAttribute("aria-hidden", "false");
+  ui.momentKicker.textContent = state.moment.kicker;
+  ui.momentTitle.textContent = state.moment.title;
+  ui.momentText.textContent = state.moment.text;
+
+  const artwork = state.moment.cardKey ? getCardArt(state.moment.cardKey) : null;
+  if (ui.momentArt) {
+    if (artwork) {
+      ui.momentArt.hidden = false;
+      ui.momentArt.style.cssText = getCardBackgroundStyle(state.moment.cardKey);
+    } else {
+      ui.momentArt.hidden = true;
+      ui.momentArt.style.cssText = "";
+    }
+  }
+}
+
+function renderPeerReview() {
+  if (!ui.reviewOverlay) {
+    return;
+  }
+
+  if (!state.peerReview) {
+    ui.reviewOverlay.hidden = true;
+    ui.reviewOverlay.setAttribute("aria-hidden", "true");
+    ui.reviewCardGrid.innerHTML = "";
+    return;
+  }
+
+  ui.reviewOverlay.hidden = false;
+  ui.reviewOverlay.setAttribute("aria-hidden", "false");
+  ui.reviewMessage.textContent = state.peerReview.message;
+  ui.reviewCardGrid.innerHTML = "";
+
+  if (!state.peerReview.cards || state.peerReview.cards.length === 0) {
+    ui.reviewCardGrid.innerHTML = '<div class="empty-state">The release queue is empty.</div>';
+    return;
+  }
+
+  state.peerReview.cards.forEach((card) => {
+    const article = document.createElement("article");
+    article.className = `review-card ${card.themeClass || ""}`;
+
+    const artwork = getCardArt(card.key);
+    const artMarkup = artwork
+      ? `<div class="review-card-art" style="${getCardBackgroundStyle(card.key)}" aria-hidden="true"></div>`
+      : "";
+
+    article.innerHTML = `
+      <div class="review-card-topline">
+        <span class="card-tag">${escapeHtml(card.tag)}</span>
+        <span class="card-icon" aria-hidden="true">${escapeHtml(getCardVisual(card.key).symbol)}</span>
+      </div>
+      ${artMarkup}
+      <strong class="review-card-name">${escapeHtml(card.name)}</strong>
+      <p class="review-card-text">${escapeHtml(card.description)}</p>
+    `;
+
+    ui.reviewCardGrid.append(article);
+  });
+}
+
+function renderDiscardBrowser() {
+  if (!ui.discardBrowserOverlay) {
+    return;
+  }
+
+  if (!state.discardBrowserOpen || !canBrowseDiscardPile()) {
+    ui.discardBrowserOverlay.hidden = true;
+    ui.discardBrowserOverlay.setAttribute("aria-hidden", "true");
+    ui.discardBrowserGrid.innerHTML = "";
+    return;
+  }
+
+  const discardPile = getDiscardBrowserCards();
+
+  ui.discardBrowserOverlay.hidden = false;
+  ui.discardBrowserOverlay.setAttribute("aria-hidden", "false");
+  ui.discardBrowserMessage.textContent =
+    "Select 1 card from the discard pile to reclaim with 5 Different Tools.";
+  ui.discardBrowserGrid.innerHTML = "";
+
+  if (discardPile.length === 0) {
+    ui.discardBrowserGrid.innerHTML =
+      '<div class="empty-state">The discard pile is empty.</div>';
+    return;
+  }
+
+  discardPile.forEach((card, index) => {
+    const artwork = getCardArt(card.key);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `discard-choice-card ${card.themeClass || ""}${card.reclaimable ? "" : " locked"}`;
+    button.disabled = !card.reclaimable;
+    button.dataset.discard = card.key;
+    button.dataset.index = String(index);
+
+    const artMarkup = artwork
+      ? `<div class="discard-choice-art" style="${getCardBackgroundStyle(card.key)}"></div>`
+      : `<div class="discard-choice-art discard-choice-fallback">${escapeHtml(getCardVisual(card.key).symbol)}</div>`;
+
+    button.innerHTML = `
+      ${artMarkup}
+      ${card.reclaimable ? "" : '<span class="discard-choice-lock">Locked</span>'}
+    `;
+
+    if (card.reclaimable) {
+      button.addEventListener("click", () => chooseDiscardCard(card.key));
+    }
+
+    ui.discardBrowserGrid.append(button);
+  });
 }
 
 function renderComboBar() {
@@ -1211,35 +1663,22 @@ function renderHand() {
       button.classList.add("selected");
     }
 
-    const helperText = card.isSnack
-      ? state.room.canPlay
-        ? "Click to cycle selection for combo plays."
-        : "Matching tool cards become useful on your turn."
-      : card.turnPlayable
-        ? card.needsTarget
-          ? "Click to choose a target."
-          : "Click to play this action."
-        : card.key === "nope"
-          ? "Saved for reaction windows."
-          : "This card resolves automatically.";
+    button.classList.add("art-only");
 
     const artMarkup = artwork
-      ? `<div class="card-art" style="background-image: url('${artwork}')" aria-hidden="true"></div>`
-      : "";
+      ? `
+        <div class="card-art" aria-hidden="true">
+          <img class="card-face-image" src="${artwork}" style="${getCardImageStyle(card.key)}" alt="" aria-hidden="true" />
+          <div class="card-overlay-meta">
+            ${card.count > 1 ? `<span class="count-pill">x${card.count}</span>` : ""}
+            ${selectedCount > 0 ? `<span class="selected-pill">Selected ${selectedCount}</span>` : ""}
+          </div>
+        </div>
+      `
+      : `<div class="card-fallback-name">${escapeHtml(card.name)}</div>`;
 
     button.innerHTML = `
-      <div class="card-topline">
-        <span class="card-tag">${escapeHtml(card.tag)}</span>
-        <span class="card-icon" aria-hidden="true">${escapeHtml(getCardVisual(card.key).symbol)}</span>
-      </div>
       ${artMarkup}
-      <strong class="card-name">${escapeHtml(card.name)}</strong>
-      <p class="card-text">${escapeHtml(card.description)}</p>
-      <div class="card-meta">
-        <span class="count-pill">x${card.count}</span>
-        ${selectedCount > 0 ? `<span class="selected-pill">Selected ${selectedCount}</span>` : ""}
-      </div>
-      <div class="card-footer">${escapeHtml(helperText)}</div>
     `;
 
     button.addEventListener("click", () => playCard(card));
@@ -1262,6 +1701,29 @@ ui.copyRoomBtn.addEventListener("click", copyRoomCode);
 ui.drawBtnTop.addEventListener("click", drawCard);
 ui.drawBtnBottom.addEventListener("click", drawCard);
 ui.logToggleBtn.addEventListener("click", toggleLogExpansion);
+if (ui.reviewCloseBtn) {
+  ui.reviewCloseBtn.addEventListener("click", hidePeerReview);
+}
+if (ui.reviewOverlay) {
+  ui.reviewOverlay.addEventListener("click", (event) => {
+    if (event.target === ui.reviewOverlay) {
+      hidePeerReview();
+    }
+  });
+}
+if (ui.discardPileBtn) {
+  ui.discardPileBtn.addEventListener("click", openDiscardBrowser);
+}
+if (ui.discardBrowserCloseBtn) {
+  ui.discardBrowserCloseBtn.addEventListener("click", closeDiscardBrowser);
+}
+if (ui.discardBrowserOverlay) {
+  ui.discardBrowserOverlay.addEventListener("click", (event) => {
+    if (event.target === ui.discardBrowserOverlay) {
+      closeDiscardBrowser();
+    }
+  });
+}
 ui.roomInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     joinRoom();

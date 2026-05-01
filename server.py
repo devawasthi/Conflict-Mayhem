@@ -21,7 +21,7 @@ PORT = int(os.getenv("PORT", "8765"))
 BASE_DIR = Path(__file__).resolve().parent
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_LOG_ENTRIES = 30
-MAX_ROOM_SIZE = 4
+MAX_ROOM_SIZE = 6
 
 SNACK_KEYS = ["cookie", "donut", "pretzel", "popcorn", "candy"]
 DISPLAY_ORDER = [
@@ -953,7 +953,11 @@ class GameRoom:
             messages.append(
                 (
                     actor.connection,
-                    {"type": "info", "message": f"Peer Review shows: {names}."},
+                    {
+                        "type": "peer_review_result",
+                        "message": f"Peer Review shows: {names}.",
+                        "cards": [make_card_payload(item) for item in reversed(preview)],
+                    },
                 )
             )
             return messages
@@ -1078,6 +1082,15 @@ class GameRoom:
             choices.append(make_card_payload(card_key))
         return choices
 
+    def discard_pile_payload(self) -> list[dict]:
+        pile = []
+        for offset, card_key in enumerate(reversed(self.discard)):
+            payload = make_card_payload(card_key)
+            payload["reclaimable"] = card_key != "hotPotato"
+            payload["discardIndex"] = offset
+            pile.append(payload)
+        return pile
+
     def request_options_payload(self) -> list[dict]:
         return [make_card_payload(card_key) for card_key in REQUESTABLE_KEYS]
 
@@ -1173,7 +1186,9 @@ class GameRoom:
             "canDraw": can_draw,
             "canPlay": can_play,
             "deckCount": len(self.deck),
+            "discardCount": len(self.discard),
             "discardTop": discard_top,
+            "discardPile": self.discard_pile_payload(),
             "discardChoices": self.discard_choice_payload(),
             "requestOptions": self.request_options_payload(),
             "players": [
@@ -1237,9 +1252,12 @@ class RoomManager:
 
     def emit_messages(self, messages: list[tuple[WebSocketConnection, dict]]) -> None:
         for target_connection, payload in messages:
-            message = payload.get("message")
-            if message:
-                self.send_info(target_connection, message)
+            if not target_connection:
+                continue
+            try:
+                target_connection.send_json(payload)
+            except OSError:
+                pass
 
     def handle_message(self, connection: WebSocketConnection, payload: str) -> None:
         try:

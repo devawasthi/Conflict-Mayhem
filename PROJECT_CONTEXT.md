@@ -51,6 +51,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 ## Multiplayer / Room Behavior
 
 - Room codes are `4` uppercase letters.
+- Each room supports up to `6` players.
 - The current room code is appended to the URL as `?room=ABCD`.
 - The client stores a per-room reconnect token in `localStorage`.
 - Refreshing in the same browser should rejoin the same room seat automatically.
@@ -69,7 +70,19 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Card art lives in `assets/cards/`.
 - The incident log is collapsible.
 - A `Production Crash` overlay animation appears for crash moments.
+- Draws and action plays now use a lightweight animated moment overlay.
+- `Peer Review` now opens a private reveal panel showing the next three cards.
 - The hand area contains the most convenient turn-ending draw control.
+- The match board now uses shorter stack placeholders, shorter hand cards, and a shorter incident log with internal scrolling.
+- The incident log now allows a taller visible area and wraps its header controls so titles and buttons do not clip on narrower layouts.
+- The discard pile now renders as a stacked visual pile instead of showing the top card description text.
+- Hand tiles are art-first and do not repeat the card name/description below the artwork.
+- Hand-tile artwork is intentionally enlarged so the illustrated card face remains the primary readable element.
+- Hand-card grid width and tile height were increased again so the card artwork reads comfortably without the removed text block.
+- The hand now renders as the actual card faces with only minimal count/selection overlays instead of tag/icon placeholder chips.
+- Hand cards explicitly pin to the top of the grid and keep full opacity when not playable so the row still reads as a clean set of aligned card faces.
+- The `5 Different Tools` combo now uses the discard pile itself as the interaction point and opens a full discard-browser overlay for choosing the reclaim target.
+- `Rubber Duck` and `Mechanical Keyboard` use a stronger per-card art offset/scale treatment so they visually align with the rest of the illustrated deck.
 
 ## Deployment Notes
 
@@ -84,3 +97,5 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Added URL-based room persistence and same-browser reconnect support.
 - Compact the room join/create panel after a live match starts.
 - Updated `Pager Alert` so it no longer skips the acting player's turn-ending draw.
+- Reduced hand-card density and added visual feedback for draws and action cards.
+- Compressed the board, log, and hand card sizing to fit more of the match on screen at once.

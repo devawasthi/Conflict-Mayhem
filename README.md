@@ -2,6 +2,8 @@
 
 Exploding Productions is an original multiplayer browser card game with room codes, real-time WebSocket updates, `Nope` reactions, `Peer Review`, `Revert Commit`, `Deploy To Staging`, `Pager Alert`, and combo rules for `2` matching tools, `3` matching tools, and `5` different tools.
 
+Each room supports up to `6` players.
+
 ## Run locally
 
 ```bash

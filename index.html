@@ -133,9 +133,13 @@
 
             <div class="stack-card discard-stack">
               <span class="stack-label">Discard</span>
-              <strong id="discard-name">Nothing yet</strong>
-              <div id="discard-art" class="stack-art" hidden></div>
-              <p id="discard-text">Played cards and spent combos will land here.</p>
+              <strong id="discard-name">0 cards</strong>
+              <button id="discard-pile-btn" class="discard-pile-btn" type="button" aria-haspopup="dialog" aria-expanded="false" disabled>
+                <div id="discard-pile" class="discard-pile empty">
+                  <div class="discard-empty">Discard pile is empty.</div>
+                </div>
+              </button>
+              <p id="discard-hint" class="discard-hint">Played cards stack here.</p>
             </div>
           </div>
 
@@ -191,6 +195,51 @@
           <span>oops</span>
           <span>hotfix</span>
         </div>
+      </div>
+    </div>
+
+    <div id="moment-overlay" class="moment-overlay" hidden aria-hidden="true">
+      <div class="moment-panel">
+        <div id="moment-kicker" class="moment-kicker">Card Added</div>
+        <div class="moment-layout">
+          <div id="moment-art" class="moment-art" hidden></div>
+          <div class="moment-copy">
+            <h2 id="moment-title">Energy Drink</h2>
+            <p id="moment-text">This card was added to your hand.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="review-overlay" class="review-overlay" hidden aria-hidden="true">
+      <div class="review-panel">
+        <div class="panel-head review-head">
+          <div>
+            <p class="eyebrow">Private reveal</p>
+            <h2>Peer Review</h2>
+          </div>
+          <button id="review-close-btn" class="ghost-btn" type="button">Close</button>
+        </div>
+        <p id="review-message" class="review-message">
+          The next three cards in the release queue are shown here.
+        </p>
+        <div id="review-card-grid" class="review-card-grid"></div>
+      </div>
+    </div>
+
+    <div id="discard-browser-overlay" class="discard-browser-overlay" hidden aria-hidden="true">
+      <div class="discard-browser-panel">
+        <div class="panel-head review-head">
+          <div>
+            <p class="eyebrow">Discard pile</p>
+            <h2>Reclaim 1 Card</h2>
+          </div>
+          <button id="discard-browser-close-btn" class="ghost-btn" type="button">Close</button>
+        </div>
+        <p id="discard-browser-message" class="review-message">
+          Select 1 card from the discard pile to reclaim.
+        </p>
+        <div id="discard-browser-grid" class="discard-browser-grid"></div>
       </div>
     </div>
 
