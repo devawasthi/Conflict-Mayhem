@@ -59,11 +59,11 @@ const CARD_ART = {
 const CARD_ART_TREATMENTS = {
   cookie: {
     positionX: "41%",
-    scale: 0.89,
+    scale: 1,
   },
   popcorn: {
     positionX: "59%",
-    scale: 0.89,
+    scale: 1,
   },
 };
 

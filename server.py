@@ -453,11 +453,15 @@ class GameRoom:
             for player in self.players:
                 player.hand.append(self.deck.pop())
 
-        hazards = max(1, len(self.players) - 1)
+        hazards = len(self.players) - 1
         self.deck.extend(["hotPotato"] * hazards)
         random.shuffle(self.deck)
         if len(self.deck) > STARTING_DECK_REMAINING:
-            self.deck = self.deck[:STARTING_DECK_REMAINING]
+            hazard_cards = [card for card in self.deck if card == "hotPotato"]
+            non_hazard_cards = [card for card in self.deck if card != "hotPotato"]
+            keep_non_hazard_count = max(0, STARTING_DECK_REMAINING - len(hazard_cards))
+            self.deck = hazard_cards + non_hazard_cards[:keep_non_hazard_count]
+            random.shuffle(self.deck)
 
         self.current_player_id = self.players[0].id
         self.add_log("A new Exploding Productions match began.")

@@ -30,6 +30,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - `Nope` cancels the latest action or combo unless another `Nope` flips it back.
 - Drawing `Production Crash` without `Blame The Intern` eliminates the player.
 - Drawing `Production Crash` with `Blame The Intern` discards both cards.
+- Production Crash count per round is exactly `(player count - 1)`.
 - If the draw deck runs out and there are used cards in the discard pile, the discard pile is shuffled back into the deck instead of immediately ending the round.
 - Combo rules:
   - `2` matching tools: steal a random card
@@ -73,6 +74,8 @@ This file is the quick-reference notes file for the project. Update it whenever 
 ## UI Notes
 
 - Card art lives in `assets/cards/`.
+- The live deck should use the consistent illustrated `Git Rekt`-style card-art set; avoid mixing in unrelated standalone images for individual cards.
+- The `Mechanical Keyboard` card slot is currently using `posh-training.webp`.
 - The incident log is collapsible.
 - A `Production Crash` overlay animation appears for crash moments.
 - Draws and action plays now use a lightweight animated moment overlay.
@@ -89,7 +92,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - The hand now renders as the actual card faces with only minimal count/selection overlays instead of tag/icon placeholder chips.
 - Hand cards explicitly pin to the top of the grid and keep full opacity when not playable so the row still reads as a clean set of aligned card faces.
 - The `5 Different Tools` combo now uses the discard pile itself as the interaction point and opens a full discard-browser overlay for choosing the reclaim target.
-- `Rubber Duck` and `Mechanical Keyboard` use a stronger per-card art offset/scale treatment so they visually align with the rest of the illustrated deck.
+- `Rubber Duck` and the `Mechanical Keyboard` slot keep custom horizontal positioning, but no longer render smaller than the rest of the deck.
 
 ## Deployment Notes
 
