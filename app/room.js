@@ -3,7 +3,7 @@ const state = {
   socketStatus: "connecting",
   queue: [],
   room: null,
-  notice: "Create a room or join one to start a multiplayer match.",
+  notice: "Join the room from this page to start the match.",
   noticeTone: "info",
   selectedCounts: {},
   pendingLocalAction: null,
@@ -88,12 +88,10 @@ const ui = {
   setupStatus: document.querySelector("#setup-status"),
   roomAccessPanel: document.querySelector("#room-access-panel"),
   setupCompactNote: document.querySelector("#setup-compact-note"),
-  createRoomBtn: document.querySelector("#create-room-btn"),
   joinRoomBtn: document.querySelector("#join-room-btn"),
   leaveRoomBtn: document.querySelector("#leave-room-btn"),
   startGameBtn: document.querySelector("#start-game-btn"),
   copyRoomBtn: document.querySelector("#copy-room-btn"),
-  drawBtnTop: document.querySelector("#draw-btn-top"),
   drawBtnBottom: document.querySelector("#draw-btn-bottom"),
   drawStatus: document.querySelector("#draw-status"),
   roomTitle: document.querySelector("#room-title"),
@@ -207,18 +205,14 @@ function roomCodeFromUrl() {
 }
 
 function updateRoomUrl(roomCode) {
-  const url = new URL(window.location.href);
   const cleanRoomCode = sanitizeRoomCode(roomCode);
-  if (cleanRoomCode) {
-    url.searchParams.set("room", cleanRoomCode);
-  } else {
-    url.searchParams.delete("room");
-  }
-  window.history.replaceState({}, "", url);
+  const nextUrl = cleanRoomCode ? `/room?room=${encodeURIComponent(cleanRoomCode)}` : "/room";
+  window.history.replaceState({}, "", nextUrl);
 }
 
 const defaultName = getStoredPlayerName() || `Dev-${Math.floor(Math.random() * 900 + 100)}`;
 ui.nameInput.value = defaultName;
+ui.roomInput.value = roomCodeFromUrl();
 
 function socketUrl() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -303,7 +297,6 @@ function handleMessage(raw) {
 
   if (message.type === "state") {
     const previousRoom = state.room;
-    const previousRoomCode = previousRoom?.roomCode || null;
     state.room = message.state;
     if (state.room?.roomCode) {
       ui.roomInput.value = state.room.roomCode;
@@ -313,9 +306,6 @@ function handleMessage(raw) {
     reconcileLocalState();
     handleRoomTransition(previousRoom, state.room);
     render();
-    if (!previousRoomCode && state.room?.roomCode) {
-      revealActiveRoom();
-    }
     return;
   }
 
@@ -333,6 +323,7 @@ function handleMessage(raw) {
   if (message.type === "info") {
     state.notice = message.message;
     state.noticeTone = "info";
+    queueMoment(buildInfoMoment(message.message));
     render();
     return;
   }
@@ -349,8 +340,8 @@ function handleMessage(raw) {
     if (previousRoomCode) {
       forgetRoomToken(previousRoomCode);
     }
-    updateRoomUrl("");
     state.room = null;
+    ui.roomInput.value = previousRoomCode;
     resetLocalInteraction();
     state.logExpanded = false;
     hideCrashOverlay();
@@ -358,7 +349,7 @@ function handleMessage(raw) {
     hideMoment();
     hidePeerReview();
     closeDiscardBrowser();
-    state.notice = "You left the room.";
+    state.notice = `You left room ${previousRoomCode}. You can rejoin from this page whenever you're ready.`;
     state.noticeTone = "info";
     render();
   }
@@ -392,7 +383,7 @@ function handleRoomTransition(previousRoom, nextRoom) {
   }
 
   const actionMoment = [...newEntries].map(buildActionMoment).find(Boolean);
-  const drawMoment = buildDrawMoment(previousRoom, nextRoom);
+  const drawMoment = buildDrawMoment(previousRoom, nextRoom, newEntries);
 
   queueMoment(actionMoment);
   queueMoment(drawMoment);
@@ -465,8 +456,22 @@ function getAddedHandCards(previousHand, nextHand) {
   return additions;
 }
 
-function buildDrawMoment(previousRoom, nextRoom) {
+function getSelfPlayerFromRoom(room) {
+  return room?.players?.find((player) => player.isYou) || null;
+}
+
+function buildDrawMoment(previousRoom, nextRoom, newEntries) {
   if (!previousRoom?.started || !nextRoom?.started) {
+    return null;
+  }
+
+  const selfPlayer = getSelfPlayerFromRoom(nextRoom) || getSelfPlayerFromRoom(previousRoom);
+  if (!selfPlayer) {
+    return null;
+  }
+
+  const drewCard = (newEntries || []).some((entry) => entry === `${selfPlayer.name} drew a card.`);
+  if (!drewCard) {
     return null;
   }
 
@@ -482,6 +487,36 @@ function buildDrawMoment(previousRoom, nextRoom) {
     text: "This card was added to your hand.",
     cardKey,
   };
+}
+
+function buildInfoMoment(message) {
+  if (!message) {
+    return null;
+  }
+
+  const stealMatch = message.match(/^You stole (.+)\.$/);
+  if (stealMatch) {
+    const cardKey = CARD_LABEL_TO_KEY[stealMatch[1]];
+    return {
+      kicker: "Card Stolen",
+      title: stealMatch[1],
+      text: "This card was stolen from another player.",
+      cardKey,
+    };
+  }
+
+  const receiveMatch = message.match(/^You received (.+) from /);
+  if (receiveMatch) {
+    const cardKey = CARD_LABEL_TO_KEY[receiveMatch[1]];
+    return {
+      kicker: "Card Claimed",
+      title: receiveMatch[1],
+      text: "A requested card was handed over to you.",
+      cardKey,
+    };
+  }
+
+  return null;
 }
 
 function buildActionMoment(entry) {
@@ -713,6 +748,8 @@ function restoreRoomFromUrl() {
 
   const roomCode = roomCodeFromUrl();
   if (!roomCode) {
+    state.notice = "No room code is attached to this URL. Return to the lobby to create or choose a room.";
+    state.noticeTone = "error";
     return;
   }
 
@@ -735,19 +772,17 @@ function restoreRoomFromUrl() {
   });
 }
 
-function createRoom() {
-  resetLocalInteraction();
-  rememberPlayerName(getPlayerName());
-  send({
-    type: "create_room",
-    name: getPlayerName(),
-  });
-}
-
 function joinRoom() {
   resetLocalInteraction();
-  const roomCode = sanitizeRoomCode(ui.roomInput.value);
+  const roomCode = sanitizeRoomCode(ui.roomInput.value || roomCodeFromUrl());
+  if (!roomCode) {
+    state.notice = "This page does not have a room code yet. Go back to the lobby first.";
+    state.noticeTone = "error";
+    render();
+    return;
+  }
   rememberPlayerName(getPlayerName());
+  state.notice = `Joining room ${roomCode}...`;
   send({
     type: "join_room",
     name: getPlayerName(),
@@ -757,7 +792,13 @@ function joinRoom() {
 }
 
 function leaveRoom() {
+  const roomCode = state.room?.roomCode || roomCodeFromUrl();
   if (!state.room) {
+    if (roomCode) {
+      forgetRoomToken(roomCode);
+      window.location.assign(`/?room=${encodeURIComponent(roomCode)}`);
+      return;
+    }
     return;
   }
   send({ type: "leave_room" });
@@ -850,6 +891,13 @@ function toggleSnackSelection(card) {
   render();
 }
 
+function getOnlyAvailableTarget() {
+  if (!state.room?.availableTargets || state.room.availableTargets.length !== 1) {
+    return null;
+  }
+  return state.room.availableTargets[0];
+}
+
 function playCard(card) {
   if (!state.room || state.room.pendingChoice || state.pendingLocalAction) {
     return;
@@ -865,6 +913,16 @@ function playCard(card) {
   }
 
   if (card.needsTarget) {
+    const loneTarget = getOnlyAvailableTarget();
+    if (loneTarget) {
+      send({
+        type: "play_card",
+        cardKey: card.key,
+        targetId: loneTarget.id,
+      });
+      return;
+    }
+
     state.pendingLocalAction = {
       kind: "target-card",
       cardKey: card.key,
@@ -885,6 +943,19 @@ function beginPair() {
   if (!stats.pairReady) {
     return;
   }
+
+  const loneTarget = getOnlyAvailableTarget();
+  if (loneTarget) {
+    send({
+      type: "play_combo",
+      comboType: "pair",
+      cardKey: stats.sameKey,
+      targetId: loneTarget.id,
+    });
+    resetLocalInteraction();
+    return;
+  }
+
   state.pendingLocalAction = {
     kind: "pair",
     cardKey: stats.sameKey,
@@ -898,11 +969,13 @@ function beginTrio() {
   if (!stats.trioReady) {
     return;
   }
+
+  const loneTarget = getOnlyAvailableTarget();
   state.pendingLocalAction = {
     kind: "trio",
     cardKey: stats.sameKey,
     label: "3 of a Kind",
-    targetId: null,
+    targetId: loneTarget ? loneTarget.id : null,
   };
   render();
 }
@@ -1070,15 +1143,20 @@ function renderSetupPanel() {
 }
 
 function renderRoomMeta() {
+  const linkedRoomCode = roomCodeFromUrl();
+
   if (!state.room) {
-    ui.roomTitle.textContent = "No Room Yet";
-    ui.roomCodeDisplay.textContent = "----";
+    ui.roomTitle.textContent = linkedRoomCode ? `Room ${linkedRoomCode}` : "No Room Yet";
+    ui.roomCodeDisplay.textContent = linkedRoomCode || "----";
     ui.phaseDisplay.textContent = "Lobby";
     ui.noticeBanner.textContent = state.notice;
-    ui.setupStatus.textContent = "No active room yet. Create or join a room to continue.";
+    ui.setupStatus.textContent = linkedRoomCode
+      ? `Room ${linkedRoomCode} is ready. Join from this page to enter the live match.`
+      : "No room code is attached to this URL. Return to the lobby to continue.";
     ui.startGameBtn.disabled = true;
     ui.copyRoomBtn.disabled = true;
-    ui.leaveRoomBtn.disabled = true;
+    ui.startGameBtn.textContent = "Start Match";
+    ui.leaveRoomBtn.disabled = !linkedRoomCode;
     return;
   }
 
@@ -1088,17 +1166,9 @@ function renderRoomMeta() {
   ui.noticeBanner.textContent = state.notice;
   ui.setupStatus.textContent = `Active room code: ${state.room.roomCode}`;
   ui.startGameBtn.disabled = !state.room.canStart;
+  ui.startGameBtn.textContent = state.room.winnerId ? "Restart Match" : "Start Match";
   ui.copyRoomBtn.disabled = false;
   ui.leaveRoomBtn.disabled = false;
-}
-
-function revealActiveRoom() {
-  if (ui.roomCard) {
-    ui.roomCard.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  }
 }
 
 function getSelfPlayer() {
@@ -1110,7 +1180,7 @@ function getDrawUiState() {
     return {
       disabled: true,
       label: "Draw To End Turn",
-      status: "Join a room to start drawing from the deck.",
+      status: "Join this room to start drawing from the deck.",
     };
   }
 
@@ -1144,9 +1214,7 @@ function getDrawUiState() {
 function renderDrawControls() {
   const drawState = getDrawUiState();
 
-  ui.drawBtnTop.disabled = drawState.disabled;
   ui.drawBtnBottom.disabled = drawState.disabled;
-  ui.drawBtnTop.textContent = drawState.label;
   ui.drawBtnBottom.textContent = drawState.label;
   if (ui.drawStatus) {
     ui.drawStatus.textContent = drawState.status;
@@ -1218,7 +1286,7 @@ function renderCenter() {
       ui.discardPileBtn.classList.remove("active");
       ui.discardPileBtn.setAttribute("aria-expanded", "false");
     }
-    ui.promptBody.textContent = "Start a room to begin.";
+    ui.promptBody.textContent = "Join this room to begin.";
     return;
   }
 
@@ -1633,7 +1701,7 @@ function renderHand() {
   if (!state.room) {
     ui.handSummary.textContent = "No cards in hand yet.";
     ui.handGrid.innerHTML =
-      '<div class="empty-state">Join a room to receive your cards.</div>';
+      '<div class="empty-state">Join this room to receive your cards.</div>';
     return;
   }
 
@@ -1693,12 +1761,10 @@ function escapeHtml(text) {
     .replaceAll(">", "&gt;");
 }
 
-ui.createRoomBtn.addEventListener("click", createRoom);
 ui.joinRoomBtn.addEventListener("click", joinRoom);
 ui.leaveRoomBtn.addEventListener("click", leaveRoom);
 ui.startGameBtn.addEventListener("click", startGame);
 ui.copyRoomBtn.addEventListener("click", copyRoomCode);
-ui.drawBtnTop.addEventListener("click", drawCard);
 ui.drawBtnBottom.addEventListener("click", drawCard);
 ui.logToggleBtn.addEventListener("click", toggleLogExpansion);
 if (ui.reviewCloseBtn) {
@@ -1731,7 +1797,7 @@ ui.roomInput.addEventListener("keydown", (event) => {
 });
 ui.nameInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
-    createRoom();
+    joinRoom();
   }
 });
 ui.nameInput.addEventListener("change", () => {

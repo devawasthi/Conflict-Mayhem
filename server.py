@@ -22,6 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_LOG_ENTRIES = 30
 MAX_ROOM_SIZE = 6
+STARTING_DECK_REMAINING = 10
 
 SNACK_KEYS = ["cookie", "donut", "pretzel", "popcorn", "candy"]
 DISPLAY_ORDER = [
@@ -415,7 +416,7 @@ class GameRoom:
         self.add_log(f"{player.name} rejoined room {self.code}.")
         return player
 
-    def build_deck(self) -> list[str]:
+    def build_deck(self, player_count: int) -> list[str]:
         cards: list[str] = []
         cards.extend(["nope"] * 5)
         cards.extend(["peek"] * 4)
@@ -423,7 +424,8 @@ class GameRoom:
         cards.extend(["attack"] * 4)
         cards.extend(["mixUp"] * 4)
         cards.extend(["swipe"] * 4)
-        cards.extend(["ovenMitt"] * 5)
+        extra_oven_mitts = 1 if player_count > 0 else 0
+        cards.extend(["ovenMitt"] * extra_oven_mitts)
         for snack_key in SNACK_KEYS:
             cards.extend([snack_key] * 4)
         random.shuffle(cards)
@@ -440,7 +442,7 @@ class GameRoom:
         self.pending_effect = None
         self.discard = []
         self.log_entries = []
-        self.deck = self.build_deck()
+        self.deck = self.build_deck(len(self.players))
 
         for player in self.players:
             player.alive = True
@@ -454,6 +456,8 @@ class GameRoom:
         hazards = max(1, len(self.players) - 1)
         self.deck.extend(["hotPotato"] * hazards)
         random.shuffle(self.deck)
+        if len(self.deck) > STARTING_DECK_REMAINING:
+            self.deck = self.deck[:STARTING_DECK_REMAINING]
 
         self.current_player_id = self.players[0].id
         self.add_log("A new Exploding Productions match began.")
@@ -624,6 +628,28 @@ class GameRoom:
             raise ValueError("Choose a valid live opponent.")
         return target
 
+    def resolve_target(self, actor_id: str, target_id: Optional[str]) -> Player:
+        if target_id:
+            return self.validate_target(actor_id, target_id)
+
+        available_targets = [
+            player
+            for player in self.players
+            if player.connected and player.alive and player.id != actor_id
+        ]
+        if len(available_targets) == 1:
+            return available_targets[0]
+        raise ValueError("Choose a valid live opponent.")
+
+    def recycle_discard_into_deck(self) -> bool:
+        if not self.discard:
+            return False
+
+        self.deck.extend(self.discard)
+        self.discard.clear()
+        random.shuffle(self.deck)
+        return True
+
     def start_effect(self, effect: dict) -> list[tuple[WebSocketConnection, dict]]:
         actor = self.get_player(effect["actor_id"])
         self.add_log(f"{actor.name} played {effect['label']}.")
@@ -729,8 +755,9 @@ class GameRoom:
         if not card["turnPlayable"]:
             raise ValueError("That card cannot be played on your turn.")
 
+        resolved_target = None
         if card["needsTarget"]:
-            self.validate_target(player.id, target_id)
+            resolved_target = self.resolve_target(player.id, target_id)
 
         self.remove_cards(player, card_key, 1)
         self.discard.append(card_key)
@@ -739,7 +766,7 @@ class GameRoom:
             "actor_id": player.id,
             "kind": card_key,
             "label": card["name"],
-            "target_id": target_id,
+            "target_id": resolved_target.id if resolved_target else target_id,
             "requested_key": None,
             "discard_key": None,
             "auto_draw_after": card_key != "skip",
@@ -767,12 +794,12 @@ class GameRoom:
                 raise ValueError("A pair must use matching tech-item cards.")
             self.remove_cards(player, card_key, 2)
             self.discard.extend([card_key, card_key])
-            self.validate_target(player.id, target_id)
+            resolved_target = self.resolve_target(player.id, target_id)
             effect = {
                 "actor_id": player.id,
                 "kind": "pair",
                 "label": "2 Matching Tools",
-                "target_id": target_id,
+                "target_id": resolved_target.id,
                 "requested_key": None,
                 "discard_key": None,
                 "combo_card_key": card_key,
@@ -791,12 +818,12 @@ class GameRoom:
                 raise ValueError("Choose a valid card to request.")
             self.remove_cards(player, card_key, 3)
             self.discard.extend([card_key, card_key, card_key])
-            self.validate_target(player.id, target_id)
+            resolved_target = self.resolve_target(player.id, target_id)
             effect = {
                 "actor_id": player.id,
                 "kind": "trio",
                 "label": "3 Matching Tools",
-                "target_id": target_id,
+                "target_id": resolved_target.id,
                 "requested_key": requested_key,
                 "discard_key": None,
                 "combo_card_key": card_key,
@@ -841,6 +868,10 @@ class GameRoom:
 
     def draw_card(self, player_id: str) -> list[tuple[WebSocketConnection, dict]]:
         player = self.assert_turn_player(player_id)
+        if not self.deck:
+            if self.recycle_discard_into_deck():
+                self.add_log("The discard pile was shuffled back into the deck.")
+
         if not self.deck:
             winner = next((other for other in self.alive_players() if other.id != player.id), None)
             if winner:
@@ -977,8 +1008,13 @@ class GameRoom:
             return messages
 
         if kind == "mixUp":
-            random.shuffle(self.deck)
-            self.add_log(f"{actor.name} mixed up the deck.")
+            recycled = self.recycle_discard_into_deck()
+            if self.deck:
+                random.shuffle(self.deck)
+            if recycled:
+                self.add_log(f"{actor.name} shuffled the deck and recycled the discard pile.")
+            else:
+                self.add_log(f"{actor.name} mixed up the deck.")
             return messages
 
         if kind == "swipe":
@@ -1461,23 +1497,41 @@ ROOMS = RoomManager()
 class GameRequestHandler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    def rewrite_static_path(self, parsed) -> None:
+        if parsed.path == "/":
+            self.path = "/index.html"
+        elif parsed.path == "/room":
+            self.path = "/room.html"
+
+    def serve_health(self, include_body: bool) -> None:
+        payload = json.dumps({"ok": True}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        if include_body:
+            self.wfile.write(payload)
+
     def do_GET(self):
         parsed = urlsplit(self.path)
         if parsed.path == "/ws":
             self.handle_websocket()
             return
         if parsed.path == "/health":
-            payload = json.dumps({"ok": True}).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
+            self.serve_health(include_body=True)
             return
 
-        if parsed.path == "/":
-            self.path = "/index.html"
+        self.rewrite_static_path(parsed)
         return super().do_GET()
+
+    def do_HEAD(self):
+        parsed = urlsplit(self.path)
+        if parsed.path == "/health":
+            self.serve_health(include_body=False)
+            return
+
+        self.rewrite_static_path(parsed)
+        return super().do_HEAD()
 
     def handle_websocket(self):
         self.close_connection = True

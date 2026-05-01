@@ -110,6 +110,10 @@ h1 {
   font-size: 1.03rem;
 }
 
+.hero-note {
+  margin: 18px 0 0;
+}
+
 .hero-status {
   min-width: 220px;
   display: grid;
@@ -143,6 +147,7 @@ h1 {
 }
 
 .setup-grid,
+.lobby-grid,
 .board-grid {
   display: grid;
   gap: 18px;
@@ -151,6 +156,14 @@ h1 {
 
 .setup-grid {
   grid-template-columns: 360px minmax(0, 1fr);
+}
+
+.lobby-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lobby-grid-secondary {
+  margin-top: 18px;
 }
 
 .setup-grid.match-live {
@@ -238,6 +251,14 @@ h1 {
   order: 2;
 }
 
+.room-shell-grid .setup-card {
+  min-width: 0;
+}
+
+.room-access-actions {
+  align-items: center;
+}
+
 .setup-compact-note {
   margin: 14px 0 0;
   padding: 14px 16px;
@@ -282,6 +303,7 @@ button {
 
 .primary-btn,
 .secondary-btn,
+.danger-btn,
 .ghost-btn,
 .choice-btn,
 .target-btn {
@@ -293,6 +315,7 @@ button {
 
 .primary-btn,
 .secondary-btn,
+.danger-btn,
 .choice-btn,
 .target-btn {
   padding: 12px 16px;
@@ -306,11 +329,18 @@ button {
 }
 
 .secondary-btn,
+.danger-btn,
 .target-btn,
 .choice-btn {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
   border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.danger-btn {
+  background: rgba(255, 126, 107, 0.18);
+  border-color: rgba(255, 126, 107, 0.32);
+  color: #ffd7d0;
 }
 
 .ghost-btn {
@@ -605,6 +635,14 @@ button:disabled {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.prompt-card-inline {
+  border: 1px solid rgba(111, 224, 255, 0.16);
+  background:
+    linear-gradient(145deg, rgba(111, 224, 255, 0.12), rgba(255, 255, 255, 0.03) 38%, rgba(10, 30, 39, 0.92) 82%),
+    rgba(10, 30, 39, 0.92);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18);
+}
+
 .prompt-body {
   margin-top: 8px;
 }
@@ -660,7 +698,8 @@ button:disabled {
 
 .hand-grid {
   margin-top: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(172px, 172px));
+  justify-content: start;
   align-items: start;
 }
 
@@ -1368,6 +1407,7 @@ button:disabled {
 
 @media (max-width: 1120px) {
   .setup-grid,
+  .lobby-grid,
   .board-grid {
     grid-template-columns: 1fr;
   }
@@ -1408,6 +1448,7 @@ button:disabled {
 
   .hand-grid {
     grid-template-columns: 1fr 1fr;
+    justify-content: stretch;
   }
 
   .turn-action-bar {

@@ -12,8 +12,9 @@ This file is the quick-reference notes file for the project. Update it whenever 
 ## Runtime
 
 - Entry server: [server.py](server.py)
-- Client UI: [index.html](index.html)
-- Client logic: [client.js](client.js)
+- Lobby page: [index.html](index.html)
+- Live room page: [room.html](room.html)
+- Client logic: [app/lobby.js](app/lobby.js), [app/room.js](app/room.js)
 - Styling: [styles.css](styles.css)
 - Default local URL: `http://localhost:8765`
 - Health endpoint: `/health`
@@ -21,12 +22,15 @@ This file is the quick-reference notes file for the project. Update it whenever 
 ## Core Game Rules
 
 - Each player starts with `1` `Blame The Intern` and `5` random cards.
+- Total `Blame The Intern` count per round is now `(player count) + 1`, which means `1` guaranteed in each opening hand and `1` extra in the deck.
+- The starting draw pile is currently capped to `10` remaining cards after setup for faster local testing.
 - A turn normally ends with a draw.
 - `Revert Commit` is the only action card that skips the turn-ending draw.
 - `Pager Alert` gives the next player `+1` required draw, but the acting player still draws to end their own turn.
 - `Nope` cancels the latest action or combo unless another `Nope` flips it back.
 - Drawing `Production Crash` without `Blame The Intern` eliminates the player.
 - Drawing `Production Crash` with `Blame The Intern` discards both cards.
+- If the draw deck runs out and there are used cards in the discard pile, the discard pile is shuffled back into the deck instead of immediately ending the round.
 - Combo rules:
   - `2` matching tools: steal a random card
   - `3` matching tools: request a specific card
@@ -52,11 +56,12 @@ This file is the quick-reference notes file for the project. Update it whenever 
 
 - Room codes are `4` uppercase letters.
 - Each room supports up to `6` players.
-- The current room code is appended to the URL as `?room=ABCD`.
+- The live room page uses `/room?room=ABCD`.
 - The client stores a per-room reconnect token in `localStorage`.
 - Refreshing in the same browser should rejoin the same room seat automatically.
 - Explicit `Leave` clears the stored reconnect token for that room.
-- During a live match, the room setup controls collapse and the active room panel remains as the primary room-control area.
+- Room creation and general code entry now happen on the lobby page, while active gameplay lives on the dedicated room page.
+- During a live match, the room access controls collapse and the active room panel remains as the primary room-control area.
 
 ## Server Notes
 
@@ -71,8 +76,10 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - The incident log is collapsible.
 - A `Production Crash` overlay animation appears for crash moments.
 - Draws and action plays now use a lightweight animated moment overlay.
+- Random steals and requested-card transfers now trigger the same card-gain moment treatment so the gained card is visible immediately.
 - `Peer Review` now opens a private reveal panel showing the next three cards.
-- The hand area contains the most convenient turn-ending draw control.
+- The hand area contains the primary turn-ending draw control.
+- The action prompt now lives directly above the hand controls instead of in the center board column.
 - The match board now uses shorter stack placeholders, shorter hand cards, and a shorter incident log with internal scrolling.
 - The incident log now allows a taller visible area and wraps its header controls so titles and buttons do not clip on narrower layouts.
 - The discard pile now renders as a stacked visual pile instead of showing the top card description text.
@@ -99,3 +106,8 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Updated `Pager Alert` so it no longer skips the acting player's turn-ending draw.
 - Reduced hand-card density and added visual feedback for draws and action cards.
 - Compressed the board, log, and hand card sizing to fit more of the match on screen at once.
+- Split the frontend into a lobby page and a dedicated room page.
+- Added discard recycling back into the deck to extend rounds.
+- Added restart-match reuse for finished rooms via the existing host start control.
+- Added auto-target behavior for steals when only one opponent remains available.
+- Stabilized the hand grid so fewer cards no longer expand and resize unpredictably.

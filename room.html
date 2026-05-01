@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exploding Productions Room</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <main class="shell">
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">Original multiplayer tech-chaos card battler</p>
+          <h1>Exploding Productions</h1>
+          <p class="hero-copy">
+            Live room play, reconnect-aware turns, combo steals, and room reuse after each round.
+          </p>
+        </div>
+        <div class="hero-status">
+          <div class="status-pill" id="connection-pill">Connecting</div>
+        </div>
+      </section>
+
+      <section class="setup-grid room-shell-grid" id="setup-grid">
+        <article class="panel setup-card" id="setup-card">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Room access</p>
+              <h2>Join This Room</h2>
+            </div>
+          </div>
+
+          <div id="room-access-panel" class="room-access-panel">
+            <label class="field">
+              <span>Player name</span>
+              <input id="name-input" type="text" maxlength="24" placeholder="Player name" />
+            </label>
+
+            <label class="field">
+              <span>Room code</span>
+              <input id="room-input" type="text" maxlength="6" placeholder="ABCD" readonly />
+            </label>
+
+            <div class="action-row wrap room-access-actions">
+              <button id="join-room-btn" class="secondary-btn">Join Room</button>
+              <button id="leave-room-btn" class="danger-btn">Leave Room</button>
+            </div>
+
+            <p id="setup-status" class="setup-status" aria-live="polite">
+              Load a room code from the URL to join this room.
+            </p>
+          </div>
+
+          <p id="setup-compact-note" class="setup-compact-note" hidden>
+            Room access is tucked away while a live match is in progress.
+          </p>
+        </article>
+
+        <article class="panel room-card" id="room-card">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Current room</p>
+              <h2 id="room-title">No Room Yet</h2>
+            </div>
+          </div>
+
+          <div class="room-meta">
+            <div class="meta-block">
+              <span class="meta-label">Room code</span>
+              <strong id="room-code-display">----</strong>
+            </div>
+            <div class="meta-block">
+              <span class="meta-label">Phase</span>
+              <strong id="phase-display">Lobby</strong>
+            </div>
+          </div>
+
+          <div class="action-row wrap">
+            <button id="start-game-btn" class="primary-btn">Start Match</button>
+            <button id="copy-room-btn" class="secondary-btn">Copy Code</button>
+          </div>
+
+          <p id="notice-banner" class="notice-banner">
+            Join the room to begin.
+          </p>
+        </article>
+      </section>
+
+      <section class="board-grid">
+        <article class="panel players-card">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Players</p>
+              <h2>Engineering Team</h2>
+            </div>
+          </div>
+          <div id="players-list" class="players-list"></div>
+        </article>
+
+        <article class="panel table-card">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Match status</p>
+              <h2 id="turn-title">Waiting For Players</h2>
+            </div>
+          </div>
+
+          <div class="deck-zone">
+            <div class="stack-card deck-stack">
+              <span class="stack-label">Deck</span>
+              <strong id="deck-count">0 cards</strong>
+              <p>Production Crashes, deploys, and desk-drawer tech loot.</p>
+            </div>
+
+            <div class="stack-card discard-stack">
+              <span class="stack-label">Discard</span>
+              <strong id="discard-name">0 cards</strong>
+              <button
+                id="discard-pile-btn"
+                class="discard-pile-btn"
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                disabled
+              >
+                <div id="discard-pile" class="discard-pile empty">
+                  <div class="discard-empty">Discard pile is empty.</div>
+                </div>
+              </button>
+              <p id="discard-hint" class="discard-hint">Played cards stack here.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel log-card">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Timeline</p>
+              <h2>Incident Log</h2>
+            </div>
+            <button id="log-toggle-btn" class="ghost-btn log-toggle-btn" type="button" hidden>
+              Show Full Log
+            </button>
+          </div>
+          <div id="log-feed" class="log-feed"></div>
+        </article>
+      </section>
+
+      <section class="panel hand-card">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Your hand</p>
+            <h2>Toolbox Cards</h2>
+          </div>
+          <p id="hand-summary" class="hand-summary">No cards in hand yet.</p>
+        </div>
+
+        <div id="prompt-card" class="prompt-card prompt-card-inline">
+          <p class="eyebrow">Action prompt</p>
+          <div id="prompt-body" class="prompt-body">Join the room to begin.</div>
+        </div>
+
+        <div class="turn-action-bar">
+          <button id="draw-btn-bottom" class="primary-btn">Draw To End Turn</button>
+          <p id="draw-status" class="draw-status">
+            This control becomes available during your turn.
+          </p>
+        </div>
+
+        <div id="combo-bar" class="combo-bar"></div>
+        <div id="hand-grid" class="hand-grid"></div>
+      </section>
+    </main>
+
+    <div id="crash-overlay" class="crash-overlay" hidden aria-hidden="true">
+      <div class="crash-overlay-panel">
+        <div class="crash-overlay-kicker">panic()</div>
+        <h2 id="crash-overlay-title">Production Crash</h2>
+        <p id="crash-overlay-text">Someone deployed with confidence and consequences.</p>
+        <div class="crash-overlay-chips" aria-hidden="true">
+          <span>500</span>
+          <span>rollback</span>
+          <span>oops</span>
+          <span>hotfix</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="moment-overlay" class="moment-overlay" hidden aria-hidden="true">
+      <div class="moment-panel">
+        <div id="moment-kicker" class="moment-kicker">Card Added</div>
+        <div class="moment-layout">
+          <div id="moment-art" class="moment-art" hidden></div>
+          <div class="moment-copy">
+            <h2 id="moment-title">Energy Drink</h2>
+            <p id="moment-text">This card was added to your hand.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="review-overlay" class="review-overlay" hidden aria-hidden="true">
+      <div class="review-panel">
+        <div class="panel-head review-head">
+          <div>
+            <p class="eyebrow">Private reveal</p>
+            <h2>Peer Review</h2>
+          </div>
+          <button id="review-close-btn" class="ghost-btn" type="button">Close</button>
+        </div>
+        <p id="review-message" class="review-message">
+          The next three cards in the release queue are shown here.
+        </p>
+        <div id="review-card-grid" class="review-card-grid"></div>
+      </div>
+    </div>
+
+    <div id="discard-browser-overlay" class="discard-browser-overlay" hidden aria-hidden="true">
+      <div class="discard-browser-panel">
+        <div class="panel-head review-head">
+          <div>
+            <p class="eyebrow">Discard pile</p>
+            <h2>Reclaim 1 Card</h2>
+          </div>
+          <button id="discard-browser-close-btn" class="ghost-btn" type="button">Close</button>
+        </div>
+        <p id="discard-browser-message" class="review-message">
+          Select 1 card from the discard pile to reclaim.
+        </p>
+        <div id="discard-browser-grid" class="discard-browser-grid"></div>
+      </div>
+    </div>
+
+    <footer class="site-footer">
+      <p>&copy; 2026 Exploding Productions. All rights reserved.</p>
+      <p>Developed by Dev A.</p>
+    </footer>
+
+    <script src="app/room.js"></script>
+  </body>
+</html>
