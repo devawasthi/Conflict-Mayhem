@@ -90,6 +90,7 @@ const ui = {
   setupCompactNote: document.querySelector("#setup-compact-note"),
   joinRoomBtn: document.querySelector("#join-room-btn"),
   leaveRoomBtn: document.querySelector("#leave-room-btn"),
+  leaveRoomLiveBtn: document.querySelector("#leave-room-live-btn"),
   startGameBtn: document.querySelector("#start-game-btn"),
   copyRoomBtn: document.querySelector("#copy-room-btn"),
   drawBtnBottom: document.querySelector("#draw-btn-bottom"),
@@ -303,7 +304,7 @@ function handleMessage(raw) {
       updateRoomUrl(state.room.roomCode);
       rememberActiveIdentity(state.room.roomCode, state.room.playerToken);
     }
-    reconcileLocalState();
+    reconcileLocalState(previousRoom, state.room);
     handleRoomTransition(previousRoom, state.room);
     render();
     return;
@@ -679,13 +680,17 @@ function hideCrashOverlay() {
   state.crashOverlay = null;
 }
 
-function reconcileLocalState() {
-  if (!state.room) {
+function reconcileLocalState(previousRoom, nextRoom) {
+  if (!nextRoom) {
     resetLocalInteraction();
     return;
   }
 
-  const available = new Map(state.room.hand.map((card) => [card.key, card.count]));
+  if (previousRoom?.canPlay && !nextRoom.canPlay) {
+    resetLocalInteraction();
+  }
+
+  const available = new Map(nextRoom.hand.map((card) => [card.key, card.count]));
 
   Object.keys(state.selectedCounts).forEach((key) => {
     const count = available.get(key);
@@ -701,7 +706,7 @@ function reconcileLocalState() {
     }
   });
 
-  if (state.room.pendingChoice || !state.room.canPlay) {
+  if (nextRoom.pendingChoice || !nextRoom.canPlay) {
     state.pendingLocalAction = null;
     state.discardBrowserOpen = false;
   }
@@ -874,7 +879,19 @@ function selectionStats() {
   };
 }
 
-function toggleSnackSelection(card) {
+function getSelectedCardPayload(stats = selectionStats()) {
+  if (!state.room || stats.total !== 1 || !stats.sameKey) {
+    return null;
+  }
+
+  return state.room.hand.find((card) => card.key === stats.sameKey) || null;
+}
+
+function isComboEligibleCard(card) {
+  return Boolean(card.comboEligible || card.isSnack || card.turnPlayable);
+}
+
+function toggleCardSelection(card) {
   if (!state.room?.canPlay || state.room.pendingChoice || state.pendingLocalAction) {
     return;
   }
@@ -898,13 +915,49 @@ function getOnlyAvailableTarget() {
   return state.room.availableTargets[0];
 }
 
+function confirmSelectedAction() {
+  const stats = selectionStats();
+  const selectedCard = getSelectedCardPayload(stats);
+  if (!selectedCard || !selectedCard.turnPlayable || selectedCard.isSnack) {
+    return;
+  }
+
+  if (selectedCard.needsTarget) {
+    const loneTarget = getOnlyAvailableTarget();
+    if (loneTarget) {
+      send({
+        type: "play_card",
+        cardKey: selectedCard.key,
+        targetId: loneTarget.id,
+      });
+      resetLocalInteraction();
+      return;
+    }
+
+    state.selectedCounts = {};
+    state.pendingLocalAction = {
+      kind: "target-card",
+      cardKey: selectedCard.key,
+      label: selectedCard.name,
+    };
+    render();
+    return;
+  }
+
+  send({
+    type: "play_card",
+    cardKey: selectedCard.key,
+  });
+  resetLocalInteraction();
+}
+
 function playCard(card) {
   if (!state.room || state.room.pendingChoice || state.pendingLocalAction) {
     return;
   }
 
-  if (card.isSnack) {
-    toggleSnackSelection(card);
+  if (isComboEligibleCard(card)) {
+    toggleCardSelection(card);
     return;
   }
 
@@ -988,7 +1041,7 @@ function beginFive() {
   state.pendingLocalAction = {
     kind: "five",
     cardKeys: stats.uniqueKeys,
-    label: "5 Different Tools",
+    label: "5 Different Cards",
   };
   render();
 }
@@ -1135,6 +1188,9 @@ function renderSetupPanel() {
   ui.setupCard.classList.toggle("compact", liveMatch);
   ui.roomAccessPanel.hidden = liveMatch;
   ui.setupCompactNote.hidden = !liveMatch;
+  if (ui.leaveRoomLiveBtn) {
+    ui.leaveRoomLiveBtn.hidden = !state.room?.started;
+  }
 
   if (liveMatch) {
     ui.setupCompactNote.textContent =
@@ -1169,6 +1225,9 @@ function renderRoomMeta() {
   ui.startGameBtn.textContent = state.room.winnerId ? "Restart Match" : "Start Match";
   ui.copyRoomBtn.disabled = false;
   ui.leaveRoomBtn.disabled = false;
+  if (ui.leaveRoomLiveBtn) {
+    ui.leaveRoomLiveBtn.disabled = false;
+  }
 }
 
 function getSelfPlayer() {
@@ -1452,7 +1511,7 @@ function renderCenter() {
       `;
     } else {
       ui.promptBody.innerHTML = `
-        <div>Use <strong>5 Different Tools</strong>, then click the discard pile to choose 1 card to reclaim.</div>
+        <div>Use <strong>5 Different Cards</strong>, then click the discard pile to choose 1 card to reclaim.</div>
         <div class="action-row wrap">
           <button id="open-discard-browser-btn" class="secondary-btn">Open Discard Pile</button>
           <button id="cancel-local-btn" class="ghost-btn">Cancel</button>
@@ -1621,7 +1680,7 @@ function renderDiscardBrowser() {
   ui.discardBrowserOverlay.hidden = false;
   ui.discardBrowserOverlay.setAttribute("aria-hidden", "false");
   ui.discardBrowserMessage.textContent =
-    "Select 1 card from the discard pile to reclaim with 5 Different Tools.";
+    "Select 1 card from the discard pile to reclaim with 5 Different Cards.";
   ui.discardBrowserGrid.innerHTML = "";
 
   if (discardPile.length === 0) {
@@ -1659,7 +1718,7 @@ function renderDiscardBrowser() {
 function renderComboBar() {
   if (!state.room) {
     ui.comboBar.innerHTML =
-      '<div class="empty-state">Select matching tool cards here when your turn starts.</div>';
+      '<div class="empty-state">Select combo-ready cards here when your turn starts.</div>';
     return;
   }
 
@@ -1667,8 +1726,16 @@ function renderComboBar() {
   const locked = !!state.room.pendingChoice || !!state.pendingLocalAction || !state.room.canPlay;
   const summary =
     stats.total === 0
-      ? "No tool cards selected."
-      : `Selected ${stats.total} tool card${stats.total === 1 ? "" : "s"} across ${stats.distinct} type${stats.distinct === 1 ? "" : "s"}.`;
+      ? "No combo-ready cards selected."
+      : `Selected ${stats.total} card${stats.total === 1 ? "" : "s"} across ${stats.distinct} type${stats.distinct === 1 ? "" : "s"}.`;
+
+  const selectedCard = getSelectedCardPayload(stats);
+  const canPlaySelectedCard = Boolean(
+    selectedCard &&
+      selectedCard.turnPlayable &&
+      !selectedCard.isSnack &&
+      !locked,
+  );
 
   ui.comboBar.innerHTML = `
     <div class="combo-summary">
@@ -1676,6 +1743,7 @@ function renderComboBar() {
       <span>${escapeHtml(summary)}</span>
     </div>
     <div class="action-row wrap">
+      <button id="play-selected-btn" class="primary-btn">Play Selected Card</button>
       <button id="pair-btn" class="secondary-btn">2 of a Kind</button>
       <button id="trio-btn" class="secondary-btn">3 of a Kind</button>
       <button id="five-btn" class="secondary-btn">5 Different</button>
@@ -1683,12 +1751,14 @@ function renderComboBar() {
     </div>
   `;
 
+  ui.comboBar.querySelector("#play-selected-btn").disabled = !canPlaySelectedCard;
   ui.comboBar.querySelector("#pair-btn").disabled = locked || !stats.pairReady;
   ui.comboBar.querySelector("#trio-btn").disabled = locked || !stats.trioReady;
   ui.comboBar.querySelector("#five-btn").disabled = locked || !stats.fiveReady;
   ui.comboBar.querySelector("#clear-selection-btn").disabled =
     stats.total === 0 && !state.pendingLocalAction;
 
+  ui.comboBar.querySelector("#play-selected-btn").addEventListener("click", confirmSelectedAction);
   ui.comboBar.querySelector("#pair-btn").addEventListener("click", beginPair);
   ui.comboBar.querySelector("#trio-btn").addEventListener("click", beginTrio);
   ui.comboBar.querySelector("#five-btn").addEventListener("click", beginFive);
@@ -1721,9 +1791,7 @@ function renderHand() {
     const button = document.createElement("button");
     button.className = `card-btn ${card.themeClass}${artwork ? " has-art" : ""}`;
 
-    const clickable =
-      !handLocked &&
-      ((card.isSnack && state.room.canPlay) || card.turnPlayable);
+    const clickable = !handLocked && isComboEligibleCard(card);
 
     button.disabled = !clickable;
 
@@ -1763,6 +1831,9 @@ function escapeHtml(text) {
 
 ui.joinRoomBtn.addEventListener("click", joinRoom);
 ui.leaveRoomBtn.addEventListener("click", leaveRoom);
+if (ui.leaveRoomLiveBtn) {
+  ui.leaveRoomLiveBtn.addEventListener("click", leaveRoom);
+}
 ui.startGameBtn.addEventListener("click", startGame);
 ui.copyRoomBtn.addEventListener("click", copyRoomCode);
 ui.drawBtnBottom.addEventListener("click", drawCard);

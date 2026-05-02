@@ -22,7 +22,6 @@ BASE_DIR = Path(__file__).resolve().parent
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_LOG_ENTRIES = 30
 MAX_ROOM_SIZE = 6
-STARTING_DECK_REMAINING = 10
 
 SNACK_KEYS = ["cookie", "donut", "pretzel", "popcorn", "candy"]
 DISPLAY_ORDER = [
@@ -157,6 +156,10 @@ CARD_CATALOG = {
         "needsTarget": False,
     },
 }
+
+
+def is_combo_eligible_key(card_key: str) -> bool:
+    return CARD_CATALOG[card_key]["group"] in {"action", "snack"}
 
 
 def sanitize_name(value: str) -> str:
@@ -316,6 +319,7 @@ class GameRoom:
         self.code = code
         self.players: list[Player] = []
         self.host_id: Optional[str] = None
+        self.match_player_count = 0
         self.started = False
         self.winner_id: Optional[str] = None
         self.current_player_id: Optional[str] = None
@@ -424,18 +428,78 @@ class GameRoom:
         cards.extend(["attack"] * 4)
         cards.extend(["mixUp"] * 4)
         cards.extend(["swipe"] * 4)
-        extra_oven_mitts = 1 if player_count > 0 else 0
+        extra_oven_mitts = player_count
         cards.extend(["ovenMitt"] * extra_oven_mitts)
         for snack_key in SNACK_KEYS:
             cards.extend([snack_key] * 4)
         random.shuffle(cards)
         return cards
 
+    def filler_card_pool(self) -> list[str]:
+        cards: list[str] = []
+        cards.extend(["nope"] * 5)
+        cards.extend(["peek"] * 4)
+        cards.extend(["skip"] * 4)
+        cards.extend(["attack"] * 4)
+        cards.extend(["mixUp"] * 4)
+        cards.extend(["swipe"] * 4)
+        for snack_key in SNACK_KEYS:
+            cards.extend([snack_key] * 4)
+        random.shuffle(cards)
+        return cards
+
+    def draw_filler_cards(self, count: int) -> list[str]:
+        result: list[str] = []
+        pool: list[str] = []
+
+        while len(result) < count:
+            if not pool:
+                pool = self.filler_card_pool()
+            result.append(pool.pop())
+
+        return result
+
+    def target_hot_potato_count(self) -> int:
+        return max(0, self.match_player_count - 1)
+
+    def target_oven_mitt_total(self) -> int:
+        alive_count = len(self.alive_players()) if self.started else self.match_player_count
+        return max(0, alive_count * 2)
+
+    def alive_hand_count(self, card_key: str) -> int:
+        return sum(player.hand.count(card_key) for player in self.alive_players())
+
+    def normalize_deck(self, cards: list[str], cap: Optional[int] = None) -> list[str]:
+        non_special_cards = [card for card in cards if card not in {"hotPotato", "ovenMitt"}]
+        desired_hot_potatoes = self.target_hot_potato_count()
+        desired_oven_mitts = max(0, self.target_oven_mitt_total() - self.alive_hand_count("ovenMitt"))
+
+        mandatory_cards = ["hotPotato"] * desired_hot_potatoes + ["ovenMitt"] * desired_oven_mitts
+        if cap is None:
+            deck = mandatory_cards + non_special_cards
+            random.shuffle(deck)
+            return deck
+
+        minimum_size = len(mandatory_cards)
+        target_size = max(cap, minimum_size)
+        needed_non_special_cards = max(0, target_size - minimum_size)
+
+        if len(non_special_cards) < needed_non_special_cards:
+            non_special_cards.extend(self.draw_filler_cards(needed_non_special_cards - len(non_special_cards)))
+        else:
+            random.shuffle(non_special_cards)
+            non_special_cards = non_special_cards[:needed_non_special_cards]
+
+        deck = mandatory_cards + non_special_cards
+        random.shuffle(deck)
+        return deck
+
     def start_game(self) -> None:
         self.players = [player for player in self.players if player.connected]
         if len(self.players) < 2:
             raise ValueError("At least two players are required to start.")
 
+        self.match_player_count = len(self.players)
         self.started = True
         self.winner_id = None
         self.pending_reinsert_player_id = None
@@ -453,15 +517,7 @@ class GameRoom:
             for player in self.players:
                 player.hand.append(self.deck.pop())
 
-        hazards = len(self.players) - 1
-        self.deck.extend(["hotPotato"] * hazards)
-        random.shuffle(self.deck)
-        if len(self.deck) > STARTING_DECK_REMAINING:
-            hazard_cards = [card for card in self.deck if card == "hotPotato"]
-            non_hazard_cards = [card for card in self.deck if card != "hotPotato"]
-            keep_non_hazard_count = max(0, STARTING_DECK_REMAINING - len(hazard_cards))
-            self.deck = hazard_cards + non_hazard_cards[:keep_non_hazard_count]
-            random.shuffle(self.deck)
+        self.deck = self.normalize_deck(self.deck)
 
         self.current_player_id = self.players[0].id
         self.add_log("A new Exploding Productions match began.")
@@ -649,10 +705,9 @@ class GameRoom:
         if not self.discard:
             return False
 
-        self.deck.extend(self.discard)
+        self.deck = self.normalize_deck(self.discard)
         self.discard.clear()
-        random.shuffle(self.deck)
-        return True
+        return bool(self.deck)
 
     def start_effect(self, effect: dict) -> list[tuple[WebSocketConnection, dict]]:
         actor = self.get_player(effect["actor_id"])
@@ -794,15 +849,15 @@ class GameRoom:
         player = self.assert_turn_player(player_id)
 
         if combo_type == "pair":
-            if card_key not in SNACK_KEYS:
-                raise ValueError("A pair must use matching tech-item cards.")
+            if not card_key or not is_combo_eligible_key(card_key):
+                raise ValueError("A pair must use matching combo-eligible cards.")
             self.remove_cards(player, card_key, 2)
             self.discard.extend([card_key, card_key])
             resolved_target = self.resolve_target(player.id, target_id)
             effect = {
                 "actor_id": player.id,
                 "kind": "pair",
-                "label": "2 Matching Tools",
+                "label": "2 Matching Cards",
                 "target_id": resolved_target.id,
                 "requested_key": None,
                 "discard_key": None,
@@ -816,8 +871,8 @@ class GameRoom:
             return self.start_effect(effect)
 
         if combo_type == "trio":
-            if card_key not in SNACK_KEYS:
-                raise ValueError("A trio must use matching tech-item cards.")
+            if not card_key or not is_combo_eligible_key(card_key):
+                raise ValueError("A trio must use matching combo-eligible cards.")
             if requested_key not in REQUESTABLE_KEYS:
                 raise ValueError("Choose a valid card to request.")
             self.remove_cards(player, card_key, 3)
@@ -826,7 +881,7 @@ class GameRoom:
             effect = {
                 "actor_id": player.id,
                 "kind": "trio",
-                "label": "3 Matching Tools",
+                "label": "3 Matching Cards",
                 "target_id": resolved_target.id,
                 "requested_key": requested_key,
                 "discard_key": None,
@@ -841,12 +896,12 @@ class GameRoom:
 
         if combo_type == "five":
             if not isinstance(card_keys, list):
-                raise ValueError("Choose five different tech-item cards.")
-            selected = [key for key in card_keys if key in SNACK_KEYS]
+                raise ValueError("Choose five different combo-eligible cards.")
+            selected = [key for key in card_keys if key in CARD_CATALOG and is_combo_eligible_key(key)]
             if len(selected) != 5 or len(set(selected)) != 5:
-                raise ValueError("The five-different combo needs five different tech-item cards.")
-            for snack_key in selected:
-                self.remove_cards(player, snack_key, 1)
+                raise ValueError("The five-different combo needs five different combo-eligible cards.")
+            for selected_key in selected:
+                self.remove_cards(player, selected_key, 1)
             self.discard.extend(selected)
             if not discard_key or discard_key == "hotPotato":
                 raise ValueError("Choose a valid discard pile card to reclaim.")
@@ -855,7 +910,7 @@ class GameRoom:
             effect = {
                 "actor_id": player.id,
                 "kind": "five",
-                "label": "5 Different Tools",
+                "label": "5 Different Cards",
                 "target_id": None,
                 "requested_key": None,
                 "discard_key": discard_key,
@@ -1012,7 +1067,9 @@ class GameRoom:
             return messages
 
         if kind == "mixUp":
-            recycled = self.recycle_discard_into_deck()
+            recycled = False
+            if not self.deck:
+                recycled = self.recycle_discard_into_deck()
             if self.deck:
                 random.shuffle(self.deck)
             if recycled:
@@ -1031,7 +1088,7 @@ class GameRoom:
         if kind == "pair":
             target = self.get_player(effect["target_id"])
             if not target or not target.connected or not target.alive:
-                self.add_log("2 Matching Tools fizzled because the target was not available.")
+                self.add_log("2 Matching Cards fizzled because the target was not available.")
                 return messages
             return self.steal_random_card(actor, target, "2 of a Kind")
 
@@ -1039,7 +1096,7 @@ class GameRoom:
             target = self.get_player(effect["target_id"])
             requested_key = effect["requested_key"]
             if not target or not target.connected or not target.alive:
-                self.add_log("3 Matching Tools fizzled because the target was not available.")
+                self.add_log("3 Matching Cards fizzled because the target was not available.")
                 return messages
             if requested_key in target.hand:
                 target.hand.remove(requested_key)
@@ -1072,7 +1129,7 @@ class GameRoom:
         if kind == "five":
             discard_key = effect["discard_key"]
             if discard_key == "hotPotato":
-                self.add_log("5 Different Tools cannot reclaim a Production Crash.")
+                self.add_log("5 Different Cards cannot reclaim a Production Crash.")
                 return messages
 
             found_index = None
@@ -1082,7 +1139,7 @@ class GameRoom:
                     break
 
             if found_index is None:
-                self.add_log("5 Different Tools fizzled because that discard card was gone.")
+                self.add_log("5 Different Cards fizzled because that discard card was gone.")
                 return messages
 
             reclaimed = self.discard.pop(found_index)
@@ -1108,7 +1165,7 @@ class GameRoom:
             payload = make_card_payload(card_key)
             payload["count"] = count
             payload["turnPlayable"] = can_play and CARD_CATALOG[card_key]["turnPlayable"]
-            payload["selectable"] = can_play and CARD_CATALOG[card_key]["group"] == "snack"
+            payload["comboEligible"] = can_play and is_combo_eligible_key(card_key)
             groups.append(payload)
         return groups
 

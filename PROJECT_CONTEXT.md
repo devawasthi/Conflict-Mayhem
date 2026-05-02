@@ -22,8 +22,8 @@ This file is the quick-reference notes file for the project. Update it whenever 
 ## Core Game Rules
 
 - Each player starts with `1` `Blame The Intern` and `5` random cards.
-- Total `Blame The Intern` count per round is now `(player count) + 1`, which means `1` guaranteed in each opening hand and `1` extra in the deck.
-- The starting draw pile is currently capped to `10` remaining cards after setup for faster local testing.
+- Total `Blame The Intern` cards now target `2 * alive players`, with `1` guaranteed in each opening hand and the live deck rebalanced around the current survivor count when it is rebuilt.
+- The draw pile now uses the full normal deck size after setup instead of the temporary `10`-card test cap.
 - A turn normally ends with a draw.
 - `Revert Commit` is the only action card that skips the turn-ending draw.
 - `Pager Alert` gives the next player `+1` required draw, but the acting player still draws to end their own turn.
@@ -33,9 +33,10 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Production Crash count per round is exactly `(player count - 1)`.
 - If the draw deck runs out and there are used cards in the discard pile, the discard pile is shuffled back into the deck instead of immediately ending the round.
 - Combo rules:
-  - `2` matching tools: steal a random card
-  - `3` matching tools: request a specific card
-  - `5` different tools: reclaim one discard-pile card
+  - `2` matching cards: steal a random card
+  - `3` matching cards: request a specific card
+  - `5` different cards: reclaim one discard-pile card
+  - Turn-playable action cards are now allowed to participate in combos as combo-eligible cards.
 
 ## Card Theme Mapping
 
@@ -83,6 +84,9 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - `Peer Review` now opens a private reveal panel showing the next three cards.
 - The hand area contains the primary turn-ending draw control.
 - The action prompt now lives directly above the hand controls instead of in the center board column.
+- Action cards now use a confirm-based hand flow so they can be selected for combos before being played.
+- Card selections clear automatically when your turn ends.
+- The room panel now exposes an in-match `Leave Room` button after the game has started.
 - The match board now uses shorter stack placeholders, shorter hand cards, and a shorter incident log with internal scrolling.
 - The incident log now allows a taller visible area and wraps its header controls so titles and buttons do not clip on narrower layouts.
 - The discard pile now renders as a stacked visual pile instead of showing the top card description text.
@@ -114,3 +118,5 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Added restart-match reuse for finished rooms via the existing host start control.
 - Added auto-target behavior for steals when only one opponent remains available.
 - Stabilized the hand grid so fewer cards no longer expand and resize unpredictably.
+- Allowed turn-playable action cards to be used in pair/trio/five combos through a confirm-to-play hand flow.
+- Rebalanced recycled decks so Production Crash and Blame The Intern counts normalize when the draw pile is rebuilt.
