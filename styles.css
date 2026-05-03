@@ -154,6 +154,10 @@ h1 {
   margin-top: 18px;
 }
 
+.turn-ribbon[hidden] {
+  display: none;
+}
+
 .setup-grid {
   grid-template-columns: 360px minmax(0, 1fr);
 }
@@ -170,8 +174,39 @@ h1 {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.setup-grid.match-live .setup-card {
+  display: none;
+}
+
 .board-grid {
   grid-template-columns: 240px minmax(0, 1fr) 250px;
+}
+
+.turn-ribbon {
+  position: sticky;
+  top: 12px;
+  z-index: 5;
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+  padding: 14px 18px;
+  border: 1px solid rgba(111, 224, 255, 0.16);
+  background:
+    linear-gradient(145deg, rgba(111, 224, 255, 0.12), rgba(255, 255, 255, 0.03) 38%, rgba(10, 30, 39, 0.94) 82%),
+    rgba(10, 30, 39, 0.94);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.turn-ribbon-title {
+  font-size: clamp(1.12rem, 2.1vw, 1.45rem);
+  line-height: 1.02;
+}
+
+.turn-ribbon-status {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .setup-card,
@@ -396,10 +431,11 @@ button:disabled {
 }
 
 .log-feed {
-  max-height: 360px;
+  max-height: 320px;
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
+  gap: 8px;
 }
 
 .log-card .panel-head {
@@ -432,11 +468,12 @@ button:disabled {
 }
 
 .log-summary {
-  padding: 12px 14px;
-  border-radius: 16px;
+  padding: 10px 12px;
+  border-radius: 14px;
   background: rgba(111, 224, 255, 0.08);
   border: 1px solid rgba(111, 224, 255, 0.14);
   color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .hand-card .panel-head {
@@ -664,15 +701,13 @@ button:disabled {
 }
 
 .turn-action-bar {
-  position: sticky;
-  bottom: 12px;
-  z-index: 2;
+  position: static;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
-  margin-top: 14px;
-  padding: 12px 14px;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: start;
+  margin-top: 0;
+  padding: 14px;
   border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(111, 224, 255, 0.14), rgba(255, 255, 255, 0.04)),
@@ -685,10 +720,11 @@ button:disabled {
   margin: 0;
   color: var(--muted);
   line-height: 1.5;
+  font-size: 0.92rem;
 }
 
 .combo-bar {
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .combo-summary {
@@ -697,10 +733,18 @@ button:disabled {
 }
 
 .hand-grid {
-  margin-top: 14px;
+  margin-top: 16px;
   grid-template-columns: repeat(auto-fill, minmax(172px, 172px));
   justify-content: start;
   align-items: start;
+}
+
+.log-item {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.92rem;
+  line-height: 1.42;
 }
 
 .card-btn {
@@ -726,12 +770,12 @@ button:disabled {
 }
 
 .card-btn.art-only {
-  display: block;
+  display: grid;
   align-self: start;
   min-height: 0;
   width: 100%;
   padding: 0;
-  gap: 0;
+  gap: 8px;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -827,13 +871,12 @@ button:disabled {
 }
 
 .card-overlay-meta {
-  position: absolute;
-  inset: auto 10px 10px 10px;
-  z-index: 1;
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: end;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 2px;
 }
 
 .card-fallback-name {
@@ -1451,6 +1494,9 @@ button:disabled {
     justify-content: stretch;
   }
 
+  .turn-ribbon {
+    top: 10px;
+  }
   .turn-action-bar {
     grid-template-columns: 1fr;
   }

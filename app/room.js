@@ -29,15 +29,15 @@ const CARD_VISUALS = {
   ovenMitt: { symbol: "BI", label: "Blame The Intern" },
   nope: { symbol: "NO", label: "Nope" },
   peek: { symbol: "PR", label: "Peer Review" },
-  skip: { symbol: "RC", label: "Revert Commit" },
-  attack: { symbol: "PA", label: "Pager Alert" },
-  mixUp: { symbol: "DS", label: "Deploy To Staging" },
+  skip: { symbol: "SK", label: "Skip" },
+  attack: { symbol: "SP", label: "Sprint Planning" },
+  mixUp: { symbol: "SH", label: "Shuffle" },
   swipe: { symbol: "PM", label: "Project Manager" },
   cookie: { symbol: "RD", label: "Rubber Duck" },
-  donut: { symbol: "ED", label: "Energy Drink" },
+  donut: { symbol: "CB", label: "Coffee Break" },
   pretzel: { symbol: "SN", label: "Sticky Note" },
   popcorn: { symbol: "KB", label: "Mechanical Keyboard" },
-  candy: { symbol: "OT", label: "Overflow Tab" },
+  candy: { symbol: "PT", label: "Posh Training" },
 };
 
 const CARD_ART = {
@@ -45,15 +45,15 @@ const CARD_ART = {
   ovenMitt: "assets/cards/blame-the-intern.webp",
   nope: "assets/cards/nope.webp",
   peek: "assets/cards/peer-review.webp",
-  skip: "assets/cards/revert-commit.webp",
-  attack: "assets/cards/pager-alert.webp",
-  mixUp: "assets/cards/deploy-to-staging.webp",
+  skip: "assets/cards/skip.webp",
+  attack: "assets/cards/sprint-planning.webp",
+  mixUp: "assets/cards/shuffle.webp",
   swipe: "assets/cards/project-manager.webp",
   cookie: "assets/cards/rubber-duck.webp",
-  donut: "assets/cards/energy-drink.webp",
+  donut: "assets/cards/coffee-break.webp",
   pretzel: "assets/cards/sticky-note.webp",
-  popcorn: "assets/cards/posh-training.webp",
-  candy: "assets/cards/overflow-tab.webp",
+  popcorn: "assets/cards/mechanical-keyboard.webp",
+  candy: "assets/cards/posh-training.webp",
 };
 
 const CARD_ART_TREATMENTS = {
@@ -104,6 +104,9 @@ const ui = {
   logToggleBtn: document.querySelector("#log-toggle-btn"),
   playersList: document.querySelector("#players-list"),
   turnTitle: document.querySelector("#turn-title"),
+  turnRibbon: document.querySelector("#turn-ribbon"),
+  turnRibbonTitle: document.querySelector("#turn-ribbon-title"),
+  turnRibbonStatus: document.querySelector("#turn-ribbon-status"),
   deckCount: document.querySelector("#deck-count"),
   discardName: document.querySelector("#discard-name"),
   discardPileBtn: document.querySelector("#discard-pile-btn"),
@@ -1161,6 +1164,7 @@ function render() {
   renderSetupPanel();
   renderRoomMeta();
   renderDrawControls();
+  renderTurnRibbon();
   renderPlayers();
   renderCenter();
   renderLog();
@@ -1183,18 +1187,16 @@ function renderConnection() {
 }
 
 function renderSetupPanel() {
-  const liveMatch = isLiveMatch();
-  ui.setupGrid.classList.toggle("match-live", liveMatch);
-  ui.setupCard.classList.toggle("compact", liveMatch);
-  ui.roomAccessPanel.hidden = liveMatch;
-  ui.setupCompactNote.hidden = !liveMatch;
+  const matchStarted = Boolean(state.room?.started);
+  ui.setupGrid.classList.toggle("match-live", matchStarted);
+  ui.setupCard.hidden = matchStarted;
+  ui.setupCard.classList.toggle("compact", false);
+  ui.roomAccessPanel.hidden = false;
+  if (ui.setupCompactNote) {
+    ui.setupCompactNote.hidden = true;
+  }
   if (ui.leaveRoomLiveBtn) {
     ui.leaveRoomLiveBtn.hidden = !state.room?.started;
-  }
-
-  if (liveMatch) {
-    ui.setupCompactNote.textContent =
-      "Room access is tucked away while a live match is in progress. Use the room panel for the active code and room controls.";
   }
 }
 
@@ -1270,6 +1272,42 @@ function getDrawUiState() {
   };
 }
 
+function getHandTurnStatusText() {
+  if (!state.room) {
+    return "Join this room to begin.";
+  }
+
+  if (state.room.pendingChoice?.kind === "reinsert") {
+    return "Resolve the Production Crash placement from the prompt below.";
+  }
+
+  if (state.room.pendingChoice?.kind === "reaction") {
+    return `A response is waiting for ${state.room.pendingChoice.actorName}'s play.`;
+  }
+
+  if (state.pendingLocalAction?.kind === "pair") {
+    return "Choose who to pressure with your 2-card combo.";
+  }
+
+  if (state.pendingLocalAction?.kind === "trio" && !state.pendingLocalAction.targetId) {
+    return "Choose the player you want to challenge with 3 of a kind.";
+  }
+
+  if (state.pendingLocalAction?.kind === "trio" && state.pendingLocalAction.targetId) {
+    return "Pick the exact card you want to request.";
+  }
+
+  if (state.pendingLocalAction?.kind === "five") {
+    return "Finish the 5-card combo by reclaiming 1 card from the discard pile.";
+  }
+
+  if (state.room.canDraw) {
+    return getDrawUiState().status;
+  }
+
+  return state.room.promptText;
+}
+
 function renderDrawControls() {
   const drawState = getDrawUiState();
 
@@ -1278,6 +1316,24 @@ function renderDrawControls() {
   if (ui.drawStatus) {
     ui.drawStatus.textContent = drawState.status;
   }
+}
+
+function renderTurnRibbon() {
+  if (!ui.turnRibbon || !ui.turnRibbonTitle || !ui.turnRibbonStatus) {
+    return;
+  }
+
+  const showRibbon = Boolean(state.room?.started);
+  ui.turnRibbon.hidden = !showRibbon;
+
+  if (!showRibbon) {
+    ui.turnRibbonTitle.textContent = "Waiting For Players";
+    ui.turnRibbonStatus.textContent = "Join the room to begin.";
+    return;
+  }
+
+  ui.turnRibbonTitle.textContent = state.room.turnLabel;
+  ui.turnRibbonStatus.textContent = getHandTurnStatusText();
 }
 
 function renderPlayers() {
@@ -1319,7 +1375,7 @@ function renderPlayers() {
       <div class="player-row">
         <div>
           <div class="player-name">${escapeHtml(player.name)}</div>
-          <div class="player-meta">Hand ${player.handCount} • Defuses ${player.stabilizers} • Draws ${player.requiredDraws}</div>
+          <div class="player-meta">Hand ${player.handCount} • Draws ${player.requiredDraws}</div>
         </div>
         <div class="player-badges">${badges.join("")}</div>
       </div>
@@ -1801,20 +1857,27 @@ function renderHand() {
 
     button.classList.add("art-only");
 
+    const metaMarkup =
+      card.count > 1 || selectedCount > 0
+        ? `
+        <div class="card-overlay-meta" aria-hidden="true">
+          ${card.count > 1 ? `<span class="count-pill">x${card.count}</span>` : ""}
+          ${selectedCount > 0 ? `<span class="selected-pill">Selected ${selectedCount}</span>` : ""}
+        </div>
+      `
+        : "";
+
     const artMarkup = artwork
       ? `
         <div class="card-art" aria-hidden="true">
           <img class="card-face-image" src="${artwork}" style="${getCardImageStyle(card.key)}" alt="" aria-hidden="true" />
-          <div class="card-overlay-meta">
-            ${card.count > 1 ? `<span class="count-pill">x${card.count}</span>` : ""}
-            ${selectedCount > 0 ? `<span class="selected-pill">Selected ${selectedCount}</span>` : ""}
-          </div>
         </div>
       `
       : `<div class="card-fallback-name">${escapeHtml(card.name)}</div>`;
 
     button.innerHTML = `
       ${artMarkup}
+      ${metaMarkup}
     `;
 
     button.addEventListener("click", () => playCard(card));

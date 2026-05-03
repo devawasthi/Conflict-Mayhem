@@ -75,7 +75,7 @@ CARD_CATALOG = {
         "needsTarget": False,
     },
     "skip": {
-        "name": "Revert Commit",
+        "name": "Skip",
         "tag": "Action",
         "description": "End your turn immediately without drawing.",
         "themeClass": "theme-skip",
@@ -84,7 +84,7 @@ CARD_CATALOG = {
         "needsTarget": False,
     },
     "attack": {
-        "name": "Pager Alert",
+        "name": "Sprint Planning",
         "tag": "Action",
         "description": "Force the next player to take an extra draw. You still draw to end your turn.",
         "themeClass": "theme-attack",
@@ -93,9 +93,9 @@ CARD_CATALOG = {
         "needsTarget": False,
     },
     "mixUp": {
-        "name": "Deploy To Staging",
+        "name": "Shuffle",
         "tag": "Action",
-        "description": "Shuffle the deck and hope staging catches the problem.",
+        "description": "Shuffle the deck and hope the chaos helps.",
         "themeClass": "theme-mix",
         "group": "action",
         "turnPlayable": True,
@@ -120,9 +120,9 @@ CARD_CATALOG = {
         "needsTarget": False,
     },
     "donut": {
-        "name": "Energy Drink",
+        "name": "Coffee Break",
         "tag": "Desk Loot",
-        "description": "Pairs, trios, and five different tools unlock combo actions.",
+        "description": "Pairs, trios, and five different cards unlock combo actions.",
         "themeClass": "theme-donut",
         "group": "snack",
         "turnPlayable": False,
@@ -147,9 +147,9 @@ CARD_CATALOG = {
         "needsTarget": False,
     },
     "candy": {
-        "name": "Overflow Tab",
+        "name": "Posh Training",
         "tag": "Desk Loot",
-        "description": "Five different tools can reclaim a card from the discard pile.",
+        "description": "Five different cards can reclaim a card from the discard pile.",
         "themeClass": "theme-candy",
         "group": "snack",
         "turnPlayable": False,
@@ -159,7 +159,7 @@ CARD_CATALOG = {
 
 
 def is_combo_eligible_key(card_key: str) -> bool:
-    return CARD_CATALOG[card_key]["group"] in {"action", "snack"}
+    return card_key in CARD_CATALOG and card_key != "hotPotato"
 
 
 def sanitize_name(value: str) -> str:
@@ -428,8 +428,6 @@ class GameRoom:
         cards.extend(["attack"] * 4)
         cards.extend(["mixUp"] * 4)
         cards.extend(["swipe"] * 4)
-        extra_oven_mitts = player_count
-        cards.extend(["ovenMitt"] * extra_oven_mitts)
         for snack_key in SNACK_KEYS:
             cards.extend([snack_key] * 4)
         random.shuffle(cards)
@@ -463,16 +461,14 @@ class GameRoom:
         return max(0, self.match_player_count - 1)
 
     def target_oven_mitt_total(self) -> int:
-        alive_count = len(self.alive_players()) if self.started else self.match_player_count
-        return max(0, alive_count * 2)
-
-    def alive_hand_count(self, card_key: str) -> int:
-        return sum(player.hand.count(card_key) for player in self.alive_players())
+        if self.match_player_count <= 0:
+            return 0
+        return self.target_hot_potato_count() + 1
 
     def normalize_deck(self, cards: list[str], cap: Optional[int] = None) -> list[str]:
         non_special_cards = [card for card in cards if card not in {"hotPotato", "ovenMitt"}]
         desired_hot_potatoes = self.target_hot_potato_count()
-        desired_oven_mitts = max(0, self.target_oven_mitt_total() - self.alive_hand_count("ovenMitt"))
+        desired_oven_mitts = self.target_oven_mitt_total()
 
         mandatory_cards = ["hotPotato"] * desired_hot_potatoes + ["ovenMitt"] * desired_oven_mitts
         if cap is None:
@@ -724,26 +720,7 @@ class GameRoom:
             self.add_log(f"{responder.name} may respond with Nope.")
             return []
 
-        messages = self.resolve_effect(effect)
-        return self.maybe_draw_after_effect(effect, messages)
-
-    def maybe_draw_after_effect(
-        self, effect: dict, messages: list[tuple[WebSocketConnection, dict]]
-    ) -> list[tuple[WebSocketConnection, dict]]:
-        if not effect.get("auto_draw_after"):
-            return messages
-
-        actor = self.get_player(effect["actor_id"])
-        if not actor or not actor.connected or not actor.alive:
-            return messages
-        if self.winner_id or self.pending_reinsert_player_id or self.pending_effect:
-            return messages
-        if self.current_player_id != actor.id:
-            return messages
-
-        self.add_log(f"{actor.name} now draws to end the turn.")
-        messages.extend(self.draw_card(actor.id))
-        return messages
+        return self.resolve_effect(effect)
 
     def finalize_pending_effect(self) -> list[tuple[WebSocketConnection, dict]]:
         if not self.pending_effect:
@@ -754,10 +731,10 @@ class GameRoom:
 
         if effect["canceled"]:
             self.add_log(f"{effect['label']} was stopped by Nope.")
-            return self.maybe_draw_after_effect(effect, [])
+            return []
 
         messages = self.resolve_effect(effect)
-        return self.maybe_draw_after_effect(effect, messages)
+        return messages
 
     def respond_nope(self, player_id: str, play_nope: bool) -> list[tuple[WebSocketConnection, dict]]:
         if not self.pending_effect:
@@ -828,7 +805,6 @@ class GameRoom:
             "target_id": resolved_target.id if resolved_target else target_id,
             "requested_key": None,
             "discard_key": None,
-            "auto_draw_after": card_key != "skip",
             "response_queue": [],
             "response_index": 0,
             "current_responder_id": None,
@@ -862,7 +838,6 @@ class GameRoom:
                 "requested_key": None,
                 "discard_key": None,
                 "combo_card_key": card_key,
-                "auto_draw_after": True,
                 "response_queue": [],
                 "response_index": 0,
                 "current_responder_id": None,
@@ -886,7 +861,6 @@ class GameRoom:
                 "requested_key": requested_key,
                 "discard_key": None,
                 "combo_card_key": card_key,
-                "auto_draw_after": True,
                 "response_queue": [],
                 "response_index": 0,
                 "current_responder_id": None,
@@ -915,7 +889,6 @@ class GameRoom:
                 "requested_key": None,
                 "discard_key": discard_key,
                 "combo_card_key": None,
-                "auto_draw_after": True,
                 "response_queue": [],
                 "response_index": 0,
                 "current_responder_id": None,
@@ -1293,7 +1266,6 @@ class GameRoom:
                     "id": player.id,
                     "name": player.name,
                     "handCount": len(player.hand),
-                    "stabilizers": player.oven_mitts,
                     "requiredDraws": player.required_draws,
                     "alive": player.alive,
                     "isHost": player.id == self.host_id,

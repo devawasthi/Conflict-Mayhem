@@ -29,15 +29,15 @@ const CARD_VISUALS = {
   ovenMitt: { symbol: "BI", label: "Blame The Intern" },
   nope: { symbol: "NO", label: "Nope" },
   peek: { symbol: "PR", label: "Peer Review" },
-  skip: { symbol: "RC", label: "Revert Commit" },
-  attack: { symbol: "PA", label: "Pager Alert" },
-  mixUp: { symbol: "DS", label: "Deploy To Staging" },
+  skip: { symbol: "SK", label: "Skip" },
+  attack: { symbol: "SP", label: "Sprint Planning" },
+  mixUp: { symbol: "SH", label: "Shuffle" },
   swipe: { symbol: "PM", label: "Project Manager" },
   cookie: { symbol: "RD", label: "Rubber Duck" },
-  donut: { symbol: "ED", label: "Energy Drink" },
+  donut: { symbol: "CB", label: "Coffee Break" },
   pretzel: { symbol: "SN", label: "Sticky Note" },
   popcorn: { symbol: "KB", label: "Mechanical Keyboard" },
-  candy: { symbol: "OT", label: "Overflow Tab" },
+  candy: { symbol: "PT", label: "Posh Training" },
 };
 
 const CARD_ART = {
@@ -45,15 +45,15 @@ const CARD_ART = {
   ovenMitt: "assets/cards/blame-the-intern.webp",
   nope: "assets/cards/nope.webp",
   peek: "assets/cards/peer-review.webp",
-  skip: "assets/cards/revert-commit.webp",
-  attack: "assets/cards/pager-alert.webp",
-  mixUp: "assets/cards/deploy-to-staging.webp",
+  skip: "assets/cards/skip.webp",
+  attack: "assets/cards/sprint-planning.webp",
+  mixUp: "assets/cards/shuffle.webp",
   swipe: "assets/cards/project-manager.webp",
   cookie: "assets/cards/rubber-duck.webp",
-  donut: "assets/cards/energy-drink.webp",
+  donut: "assets/cards/coffee-break.webp",
   pretzel: "assets/cards/sticky-note.webp",
-  popcorn: "assets/cards/posh-training.webp",
-  candy: "assets/cards/overflow-tab.webp",
+  popcorn: "assets/cards/mechanical-keyboard.webp",
+  candy: "assets/cards/posh-training.webp",
 };
 
 const CARD_ART_TREATMENTS = {

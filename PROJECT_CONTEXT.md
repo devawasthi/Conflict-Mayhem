@@ -22,11 +22,11 @@ This file is the quick-reference notes file for the project. Update it whenever 
 ## Core Game Rules
 
 - Each player starts with `1` `Blame The Intern` and `5` random cards.
-- Total `Blame The Intern` cards now target `2 * alive players`, with `1` guaranteed in each opening hand and the live deck rebalanced around the current survivor count when it is rebuilt.
+- The draw deck keeps `Blame The Intern` at `(Production Crashes left in deck + 1)`, while each player still starts with `1` guaranteed copy in hand.
 - The draw pile now uses the full normal deck size after setup instead of the temporary `10`-card test cap.
 - A turn normally ends with a draw.
-- `Revert Commit` is the only action card that skips the turn-ending draw.
-- `Pager Alert` gives the next player `+1` required draw, but the acting player still draws to end their own turn.
+- `Skip` is the only action card that skips the turn-ending draw.
+- `Sprint Planning` gives the next player `+1` required draw, but the acting player still draws to end their own turn.
 - `Nope` cancels the latest action or combo unless another `Nope` flips it back.
 - Drawing `Production Crash` without `Blame The Intern` eliminates the player.
 - Drawing `Production Crash` with `Blame The Intern` discards both cards.
@@ -36,7 +36,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
   - `2` matching cards: steal a random card
   - `3` matching cards: request a specific card
   - `5` different cards: reclaim one discard-pile card
-  - Turn-playable action cards are now allowed to participate in combos as combo-eligible cards.
+  - Any non-`Production Crash` card, including `Nope` and `Blame The Intern`, is combo-eligible.
 
 ## Card Theme Mapping
 
@@ -44,20 +44,21 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - `Blame The Intern`
 - `Nope`
 - `Peer Review`
-- `Revert Commit`
-- `Pager Alert`
-- `Deploy To Staging`
+- `Skip`
+- `Sprint Planning`
+- `Shuffle`
 - `Project Manager`
 - `Rubber Duck`
-- `Energy Drink`
+- `Coffee Break`
 - `Sticky Note`
 - `Mechanical Keyboard`
-- `Overflow Tab`
+- `Posh Training`
 
 ## Multiplayer / Room Behavior
 
 - Room codes are `4` uppercase letters.
 - Each room supports up to `6` players.
+- The `Engineering Team` sidebar only exposes public information; it does not reveal how many `Blame The Intern` cards another player holds.
 - The live room page uses `/room?room=ABCD`.
 - The client stores a per-room reconnect token in `localStorage`.
 - Refreshing in the same browser should rejoin the same room seat automatically.
@@ -76,7 +77,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 
 - Card art lives in `assets/cards/`.
 - The live deck should use the consistent illustrated `Git Rekt`-style card-art set; avoid mixing in unrelated standalone images for individual cards.
-- The `Mechanical Keyboard` card slot is currently using `posh-training.webp`.
+- The card-art mappings should stay aligned with the current filenames in `assets/cards/`, including `skip.webp`, `shuffle.webp`, `sprint-planning.webp`, `coffee-break.webp`, `mechanical-keyboard.webp`, and `posh-training.webp`.
 - The incident log is collapsible.
 - A `Production Crash` overlay animation appears for crash moments.
 - Draws and action plays now use a lightweight animated moment overlay.
@@ -84,10 +85,12 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - `Peer Review` now opens a private reveal panel showing the next three cards.
 - The hand area contains the primary turn-ending draw control.
 - The action prompt now lives directly above the hand controls instead of in the center board column.
-- Action cards now use a confirm-based hand flow so they can be selected for combos before being played.
+- A compact sticky turn ribbon now sits above the board during live matches, the room-access card is hidden once a match has started, and the combo tray sits below the hand cards.
+- All non-`Production Crash` cards can be selected into the combo tray, while turn-playable actions still use the same confirm-to-play flow.
 - Card selections clear automatically when your turn ends.
 - The room panel now exposes an in-match `Leave Room` button after the game has started.
 - The match board now uses shorter stack placeholders, shorter hand cards, and a shorter incident log with internal scrolling.
+- Incident log entries are intentionally compact so more recent events stay visible without crowding the board.
 - The incident log now allows a taller visible area and wraps its header controls so titles and buttons do not clip on narrower layouts.
 - The discard pile now renders as a stacked visual pile instead of showing the top card description text.
 - Hand tiles are art-first and do not repeat the card name/description below the artwork.
@@ -110,7 +113,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Added illustrated card art for themed cards.
 - Added URL-based room persistence and same-browser reconnect support.
 - Compact the room join/create panel after a live match starts.
-- Updated `Pager Alert` so it no longer skips the acting player's turn-ending draw.
+- Updated `Sprint Planning` so it no longer skips the acting player's turn-ending draw.
 - Reduced hand-card density and added visual feedback for draws and action cards.
 - Compressed the board, log, and hand card sizing to fit more of the match on screen at once.
 - Split the frontend into a lobby page and a dedicated room page.
