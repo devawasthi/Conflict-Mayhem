@@ -145,3 +145,4 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Stabilized the hand grid so fewer cards no longer expand and resize unpredictably.
 - Allowed turn-playable action cards to be used in pair/trio/five combos through a confirm-to-play hand flow.
 - Rebalanced recycled decks so Production Crash and Blame The Intern counts normalize when the draw pile is rebuilt.
+- Hardened room recovery after refresh/network blips by auto-retrying same-session reconnects and ignoring stale socket disconnects after a session is reclaimed.

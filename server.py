@@ -412,6 +412,21 @@ class GameRoom:
         connection.player_id = player.id
         connection.room_code = self.code
 
+    def clear_player_connection(self, player: Player) -> None:
+        if player.connection:
+            player.connection.room_code = None
+            player.connection.player_id = None
+        player.connection = None
+        player.connected = False
+
+    def connection_is_active(self, connection: Optional[WebSocketConnection]) -> bool:
+        if not connection or connection.closed:
+            return False
+        try:
+            return connection.socket.fileno() >= 0
+        except OSError:
+            return False
+
     def add_player(
         self, connection: WebSocketConnection, name: str, session_token: Optional[str] = None
     ) -> Player:
@@ -435,7 +450,9 @@ class GameRoom:
         if not player:
             return None
         if player.connected:
-            raise ValueError("That player is already connected in another tab.")
+            if self.connection_is_active(player.connection):
+                raise ValueError("That player is already connected in another tab.")
+            self.clear_player_connection(player)
 
         player.name = name or player.name
         self.attach_player_connection(player, connection)
@@ -569,11 +586,7 @@ class GameRoom:
         if not player:
             return not self.connected_players()
 
-        player.connected = False
-        if player.connection:
-            player.connection.room_code = None
-            player.connection.player_id = None
-        player.connection = None
+        self.clear_player_connection(player)
         player.session_token = ""
 
         if not self.started:
@@ -592,16 +605,17 @@ class GameRoom:
         self.ensure_host()
         return not self.connected_players()
 
-    def disconnect_player(self, player_id: str) -> bool:
+    def disconnect_player(
+        self, player_id: str, connection: Optional[WebSocketConnection] = None
+    ) -> bool:
         player = self.get_player(player_id)
         if not player:
             return False
 
-        player.connected = False
-        if player.connection:
-            player.connection.room_code = None
-            player.connection.player_id = None
-        player.connection = None
+        if connection and player.connection is not connection:
+            return False
+
+        self.clear_player_connection(player)
 
         if not self.started:
             self.add_log(f"{player.name} disconnected from the lobby.")
@@ -1648,7 +1662,7 @@ class RoomManager:
                 return
 
             player = room.get_player(connection.player_id)
-            removable = room.disconnect_player(connection.player_id)
+            removable = room.disconnect_player(connection.player_id, connection)
             if removable:
                 self.cancel_room_disconnect_timeouts(room.code)
                 self.rooms.pop(room.code, None)

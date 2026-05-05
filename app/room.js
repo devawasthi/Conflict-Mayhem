@@ -18,9 +18,15 @@ const CRASH_OVERLAY_DURATION_MS = 2600;
 const MOMENT_DURATION_MS = 2200;
 const PLAYER_NAME_STORAGE_KEY = "exploding-productions-player-name";
 const ROOM_TOKEN_STORAGE_PREFIX = "exploding-productions-room-token:";
+const MAX_RECONNECT_RETRIES = 6;
 let crashOverlayTimer = null;
 let momentTimer = null;
 let attemptedRoomRestore = false;
+let reconnectTimer = null;
+let reconnectAttemptCount = 0;
+let sessionRetryTimer = null;
+let sessionRetryCount = 0;
+let manualLeaveInProgress = false;
 
 const CARD_VISUALS = {
   hotPotato: { symbol: "!!", label: "Production Crash" },
@@ -218,6 +224,97 @@ function socketUrl() {
   return `${protocol}://${window.location.host}/ws`;
 }
 
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+function clearSessionRetryTimer() {
+  if (sessionRetryTimer) {
+    window.clearTimeout(sessionRetryTimer);
+    sessionRetryTimer = null;
+  }
+}
+
+function resetRecoveryState() {
+  clearReconnectTimer();
+  clearSessionRetryTimer();
+  reconnectAttemptCount = 0;
+  sessionRetryCount = 0;
+}
+
+function buildStoredJoinPayload(roomCode = state.room?.roomCode || roomCodeFromUrl()) {
+  const cleanRoomCode = sanitizeRoomCode(roomCode);
+  const playerToken = getStoredRoomToken(cleanRoomCode);
+  if (!cleanRoomCode || !playerToken) {
+    return null;
+  }
+  return {
+    type: "join_room",
+    name: getPlayerName(),
+    roomCode: cleanRoomCode,
+    playerToken,
+  };
+}
+
+function scheduleRoomRecovery(reason = "Connection lost.") {
+  if (manualLeaveInProgress) {
+    return;
+  }
+
+  const payload = buildStoredJoinPayload();
+  if (!payload) {
+    state.notice = "Connection closed. Refresh the page or reconnect by joining a room again.";
+    state.noticeTone = "error";
+    return;
+  }
+
+  clearReconnectTimer();
+  const attempt = reconnectAttemptCount;
+  const delayMs = Math.min(700 * 2 ** attempt, 3200);
+  reconnectAttemptCount += 1;
+  state.notice = `${reason} Reconnecting to room ${payload.roomCode}...`;
+  state.noticeTone = "info";
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    connectSocket();
+    send(payload);
+    render();
+  }, delayMs);
+}
+
+function scheduleSessionReclaimRetry() {
+  if (manualLeaveInProgress) {
+    return;
+  }
+
+  const payload = buildStoredJoinPayload();
+  if (!payload) {
+    return;
+  }
+
+  if (sessionRetryCount >= MAX_RECONNECT_RETRIES) {
+    state.notice = "Reconnect is taking longer than expected. Try refreshing once more in a moment.";
+    state.noticeTone = "error";
+    render();
+    return;
+  }
+
+  clearSessionRetryTimer();
+  sessionRetryCount += 1;
+  const delayMs = 350 + sessionRetryCount * 250;
+  state.notice = `Finishing reconnect to room ${payload.roomCode}...`;
+  state.noticeTone = "info";
+  sessionRetryTimer = window.setTimeout(() => {
+    sessionRetryTimer = null;
+    connectSocket();
+    send(payload);
+    render();
+  }, delayMs);
+}
+
 function connectSocket() {
   if (
     state.socket &&
@@ -234,30 +331,43 @@ function connectSocket() {
   state.socket = socket;
 
   socket.addEventListener("open", () => {
+    if (state.socket !== socket) {
+      return;
+    }
     state.socketStatus = "online";
     flushQueue();
     render();
   });
 
   socket.addEventListener("message", (event) => {
+    if (state.socket !== socket) {
+      return;
+    }
     handleMessage(event.data);
   });
 
   socket.addEventListener("close", () => {
+    if (state.socket && state.socket !== socket) {
+      return;
+    }
+    if (state.socket === socket) {
+      state.socket = null;
+    }
     state.socketStatus = "offline";
-    state.socket = null;
-    state.room = null;
     resetLocalInteraction();
     hideCrashOverlay();
     state.momentQueue = [];
     hideMoment();
     hidePeerReview();
     closeDiscardBrowser();
-    state.notice = "Connection closed. Refresh the page or reconnect by joining a room again.";
+    scheduleRoomRecovery();
     render();
   });
 
   socket.addEventListener("error", () => {
+    if (state.socket !== socket) {
+      return;
+    }
     state.notice = "A network error occurred while talking to the game server.";
     state.noticeTone = "error";
     render();
@@ -296,6 +406,8 @@ function handleMessage(raw) {
 
   if (message.type === "state") {
     const previousRoom = state.room;
+    manualLeaveInProgress = false;
+    resetRecoveryState();
     state.room = message.state;
     if (state.room?.roomCode) {
       ui.roomInput.value = state.room.roomCode;
@@ -328,6 +440,14 @@ function handleMessage(raw) {
   }
 
   if (message.type === "error") {
+    if (
+      message.message === "That player is already connected in another tab." &&
+      buildStoredJoinPayload()
+    ) {
+      scheduleSessionReclaimRetry();
+      render();
+      return;
+    }
     state.notice = message.message;
     state.noticeTone = "error";
     render();
@@ -339,6 +459,8 @@ function handleMessage(raw) {
     if (previousRoomCode) {
       forgetRoomToken(previousRoomCode);
     }
+    manualLeaveInProgress = false;
+    resetRecoveryState();
     state.room = null;
     ui.roomInput.value = previousRoomCode;
     resetLocalInteraction();
@@ -771,6 +893,8 @@ function restoreRoomFromUrl() {
     return;
   }
 
+  manualLeaveInProgress = false;
+  resetRecoveryState();
   state.notice = `Reconnecting to room ${roomCode}...`;
   state.noticeTone = "info";
   send({
@@ -790,6 +914,8 @@ function joinRoom() {
     render();
     return;
   }
+  manualLeaveInProgress = false;
+  resetRecoveryState();
   rememberPlayerName(getPlayerName());
   state.notice = `Joining room ${roomCode}...`;
   send({
@@ -810,6 +936,8 @@ function leaveRoom() {
     }
     return;
   }
+  manualLeaveInProgress = true;
+  resetRecoveryState();
   send({ type: "leave_room" });
 }
 
@@ -2028,6 +2156,15 @@ ui.nameInput.addEventListener("keydown", (event) => {
 });
 ui.nameInput.addEventListener("change", () => {
   rememberPlayerName(getPlayerName());
+});
+window.addEventListener("pagehide", () => {
+  if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+    try {
+      state.socket.close(1000, "pagehide");
+    } catch (_error) {
+      // Ignore best-effort close failures during navigation.
+    }
+  }
 });
 
 connectSocket();
