@@ -7,7 +7,6 @@ const state = {
   noticeTone: "info",
   selectedCounts: {},
   pendingLocalAction: null,
-  logExpanded: false,
   crashOverlay: null,
   moment: null,
   momentQueue: [],
@@ -15,7 +14,6 @@ const state = {
   discardBrowserOpen: false,
 };
 
-const LOG_COLLAPSE_COUNT = 4;
 const CRASH_OVERLAY_DURATION_MS = 2600;
 const MOMENT_DURATION_MS = 2200;
 const PLAYER_NAME_STORAGE_KEY = "exploding-productions-player-name";
@@ -81,6 +79,7 @@ const ACTION_MOMENT_COPY = {
 };
 
 const ui = {
+  roomHero: document.querySelector("#room-hero"),
   connectionPill: document.querySelector("#connection-pill"),
   setupGrid: document.querySelector("#setup-grid"),
   nameInput: document.querySelector("#name-input"),
@@ -93,26 +92,20 @@ const ui = {
   leaveRoomLiveBtn: document.querySelector("#leave-room-live-btn"),
   startGameBtn: document.querySelector("#start-game-btn"),
   copyRoomBtn: document.querySelector("#copy-room-btn"),
-  drawBtnBottom: document.querySelector("#draw-btn-bottom"),
-  drawStatus: document.querySelector("#draw-status"),
   roomTitle: document.querySelector("#room-title"),
   roomCodeDisplay: document.querySelector("#room-code-display"),
   phaseDisplay: document.querySelector("#phase-display"),
   noticeBanner: document.querySelector("#notice-banner"),
   setupCard: document.querySelector("#setup-card"),
   roomCard: document.querySelector("#room-card"),
-  logToggleBtn: document.querySelector("#log-toggle-btn"),
+  playRow: document.querySelector("#play-row"),
+  playersCard: document.querySelector("#players-card"),
+  sideStack: document.querySelector("#side-stack"),
   playersList: document.querySelector("#players-list"),
-  turnTitle: document.querySelector("#turn-title"),
-  turnRibbon: document.querySelector("#turn-ribbon"),
-  turnRibbonTitle: document.querySelector("#turn-ribbon-title"),
-  turnRibbonStatus: document.querySelector("#turn-ribbon-status"),
   deckCount: document.querySelector("#deck-count"),
   discardName: document.querySelector("#discard-name"),
   discardPileBtn: document.querySelector("#discard-pile-btn"),
-  discardPile: document.querySelector("#discard-pile"),
   discardHint: document.querySelector("#discard-hint"),
-  promptBody: document.querySelector("#prompt-body"),
   logFeed: document.querySelector("#log-feed"),
   comboBar: document.querySelector("#combo-bar"),
   handGrid: document.querySelector("#hand-grid"),
@@ -347,7 +340,6 @@ function handleMessage(raw) {
     state.room = null;
     ui.roomInput.value = previousRoomCode;
     resetLocalInteraction();
-    state.logExpanded = false;
     hideCrashOverlay();
     state.momentQueue = [];
     hideMoment();
@@ -361,7 +353,6 @@ function handleMessage(raw) {
 
 function handleRoomTransition(previousRoom, nextRoom) {
   if (!nextRoom) {
-    state.logExpanded = false;
     hideCrashOverlay();
     state.momentQueue = [];
     hideMoment();
@@ -372,7 +363,6 @@ function handleRoomTransition(previousRoom, nextRoom) {
 
   const sameRoom = previousRoom?.roomCode && previousRoom.roomCode === nextRoom.roomCode;
   if (!sameRoom) {
-    state.logExpanded = false;
     state.momentQueue = [];
     hideMoment();
     hidePeerReview();
@@ -643,7 +633,11 @@ function getDiscardBrowserCards() {
   return [...pendingCards, ...basePile];
 }
 
-function canBrowseDiscardPile() {
+function canOpenDiscardBrowser() {
+  return !!state.room && getDiscardBrowserCards().length > 0;
+}
+
+function canReclaimDiscardCard() {
   return (
     !!state.room &&
     state.pendingLocalAction?.kind === "five" &&
@@ -652,7 +646,7 @@ function canBrowseDiscardPile() {
 }
 
 function openDiscardBrowser() {
-  if (!canBrowseDiscardPile()) {
+  if (!canOpenDiscardBrowser()) {
     return;
   }
   state.discardBrowserOpen = true;
@@ -724,15 +718,6 @@ function resetLocalInteraction() {
 function clearSelections() {
   resetLocalInteraction();
   render();
-}
-
-function toggleLogExpansion() {
-  if (!state.room || state.room.log.length <= LOG_COLLAPSE_COUNT) {
-    return;
-  }
-
-  state.logExpanded = !state.logExpanded;
-  renderLog();
 }
 
 function getPlayerName() {
@@ -1163,8 +1148,6 @@ function render() {
   renderConnection();
   renderSetupPanel();
   renderRoomMeta();
-  renderDrawControls();
-  renderTurnRibbon();
   renderPlayers();
   renderCenter();
   renderLog();
@@ -1188,15 +1171,32 @@ function renderConnection() {
 
 function renderSetupPanel() {
   const matchStarted = Boolean(state.room?.started);
+  if (ui.roomHero) {
+    ui.roomHero.classList.remove("compact");
+  }
   ui.setupGrid.classList.toggle("match-live", matchStarted);
+  ui.setupGrid.hidden = matchStarted;
   ui.setupCard.hidden = matchStarted;
+  if (ui.roomCard) {
+    ui.roomCard.hidden = matchStarted;
+  }
   ui.setupCard.classList.toggle("compact", false);
   ui.roomAccessPanel.hidden = false;
   if (ui.setupCompactNote) {
     ui.setupCompactNote.hidden = true;
   }
   if (ui.leaveRoomLiveBtn) {
-    ui.leaveRoomLiveBtn.hidden = !state.room?.started;
+    ui.leaveRoomLiveBtn.hidden = !state.room;
+    ui.leaveRoomLiveBtn.disabled = !state.room;
+  }
+  if (ui.playRow) {
+    ui.playRow.classList.toggle("pregame", !matchStarted);
+  }
+  if (ui.playersCard) {
+    ui.playersCard.hidden = !matchStarted;
+  }
+  if (ui.sideStack) {
+    ui.sideStack.hidden = !matchStarted;
   }
 }
 
@@ -1308,32 +1308,39 @@ function getHandTurnStatusText() {
   return state.room.promptText;
 }
 
-function renderDrawControls() {
-  const drawState = getDrawUiState();
-
-  ui.drawBtnBottom.disabled = drawState.disabled;
-  ui.drawBtnBottom.textContent = drawState.label;
-  if (ui.drawStatus) {
-    ui.drawStatus.textContent = drawState.status;
-  }
-}
-
-function renderTurnRibbon() {
-  if (!ui.turnRibbon || !ui.turnRibbonTitle || !ui.turnRibbonStatus) {
+function renderHandTurnPanel() {
+  if (!ui.handTurnPanel || !ui.handTurnTitle || !ui.handTurnStatus || !ui.handTurnChip) {
     return;
   }
 
-  const showRibbon = Boolean(state.room?.started);
-  ui.turnRibbon.hidden = !showRibbon;
-
-  if (!showRibbon) {
-    ui.turnRibbonTitle.textContent = "Waiting For Players";
-    ui.turnRibbonStatus.textContent = "Join the room to begin.";
+  if (!state.room) {
+    ui.handTurnPanel.className = "hand-turn-panel state-waiting";
+    ui.handTurnChip.textContent = "Lobby";
+    ui.handTurnTitle.textContent = "Waiting For Players";
+    ui.handTurnStatus.textContent = "Join the room to begin.";
     return;
   }
 
-  ui.turnRibbonTitle.textContent = state.room.turnLabel;
-  ui.turnRibbonStatus.textContent = getHandTurnStatusText();
+  let toneClass = "state-waiting";
+  let chipText = "Watching";
+
+  if (state.room.winnerId) {
+    toneClass = "state-finished";
+    chipText = "Round Over";
+  } else if (state.room.pendingChoice || state.pendingLocalAction) {
+    toneClass = "state-alert";
+    chipText = "Resolve";
+  } else if (state.room.canPlay) {
+    toneClass = "state-active";
+    chipText = "Your Move";
+  } else if (state.room.started) {
+    chipText = "Stand By";
+  }
+
+  ui.handTurnPanel.className = `hand-turn-panel ${toneClass}`;
+  ui.handTurnChip.textContent = chipText;
+  ui.handTurnTitle.textContent = state.room.turnLabel;
+  ui.handTurnStatus.textContent = getHandTurnStatusText();
 }
 
 function renderPlayers() {
@@ -1387,26 +1394,26 @@ function renderPlayers() {
 
 function renderCenter() {
   if (!state.room) {
-    ui.turnTitle.textContent = "Waiting For Players";
-    ui.deckCount.textContent = "0 cards";
-    ui.discardName.textContent = "0 cards";
-    if (ui.discardPile) {
-      ui.discardPile.innerHTML = '<div class="discard-empty">Discard pile is empty.</div>';
+    if (ui.deckCount) {
+      ui.deckCount.textContent = "0 cards";
+    }
+    if (ui.discardName) {
+      ui.discardName.textContent = "0 cards";
     }
     if (ui.discardHint) {
-      ui.discardHint.textContent = "Played cards stack here.";
+      ui.discardHint.textContent = "Reveal used cards in a popup when needed.";
     }
     if (ui.discardPileBtn) {
       ui.discardPileBtn.disabled = true;
       ui.discardPileBtn.classList.remove("active");
       ui.discardPileBtn.setAttribute("aria-expanded", "false");
     }
-    ui.promptBody.textContent = "Join this room to begin.";
     return;
   }
 
-  ui.turnTitle.textContent = state.room.turnLabel;
-  ui.deckCount.textContent = `${state.room.deckCount} cards`;
+  if (ui.deckCount) {
+    ui.deckCount.textContent = `${state.room.deckCount} cards`;
+  }
 
   const pendingChoice = state.room.pendingChoice;
   const localAction = state.pendingLocalAction;
@@ -1420,28 +1427,11 @@ function renderCenter() {
     localAction?.kind === "five"
       ? discardPile.length
       : state.room.discardCount || discardPile.length;
-  ui.discardName.textContent = `${discardCount} card${discardCount === 1 ? "" : "s"}`;
-
-  if (ui.discardPile) {
-    const preview = discardPile.slice(0, 4).reverse();
-    if (preview.length === 0) {
-      ui.discardPile.innerHTML = '<div class="discard-empty">Discard pile is empty.</div>';
-      ui.discardPile.classList.add("empty");
-    } else {
-      ui.discardPile.classList.remove("empty");
-      ui.discardPile.innerHTML = preview
-        .map((card, index) => {
-          const offsetClass = `offset-${index}`;
-          if (getCardArt(card.key)) {
-            return `<div class="discard-preview-card ${offsetClass}" style="${getCardBackgroundStyle(card.key)}" aria-hidden="true"></div>`;
-          }
-          return `<div class="discard-preview-card discard-preview-fallback ${offsetClass}" aria-hidden="true">${escapeHtml(getCardVisual(card.key).symbol)}</div>`;
-        })
-        .join("");
-    }
+  if (ui.discardName) {
+    ui.discardName.textContent = `${discardCount} card${discardCount === 1 ? "" : "s"}`;
   }
 
-  const discardPileInteractive = canBrowseDiscardPile();
+  const discardPileInteractive = canOpenDiscardBrowser();
   if (ui.discardPileBtn) {
     ui.discardPileBtn.disabled = !discardPileInteractive;
     ui.discardPileBtn.classList.toggle("active", discardPileInteractive);
@@ -1449,18 +1439,28 @@ function renderCenter() {
   }
 
   if (ui.discardHint) {
-    if (discardPileInteractive) {
-      ui.discardHint.textContent = "Click the discard pile to reclaim 1 card.";
+    if (canReclaimDiscardCard()) {
+      ui.discardHint.textContent = "Open the discard pile to reclaim 1 card for 5 Different.";
     } else if (discardCount === 0) {
-      ui.discardHint.textContent = "Played cards stack here.";
+      ui.discardHint.textContent = "Used cards will appear here once play begins.";
     } else {
-      ui.discardHint.textContent = "Recent plays stack here.";
+      ui.discardHint.textContent = "Open the discard pile popup to review recent plays.";
     }
   }
 
+}
+
+function mountActionTrayPrompt(container) {
+  if (!container || !state.room) {
+    return;
+  }
+
+  const pendingChoice = state.room.pendingChoice;
+  const localAction = state.pendingLocalAction;
+
   if (pendingChoice?.kind === "reinsert") {
-    ui.promptBody.innerHTML = `
-      <div>Choose where to hide the Production Crash back in the deck.</div>
+    container.innerHTML = `
+      <div class="combo-prompt-text">Choose where to hide the Production Crash back in the deck.</div>
       <div class="choice-grid">
         ${pendingChoice.options
           .map(
@@ -1471,28 +1471,28 @@ function renderCenter() {
       </div>
     `;
 
-    ui.promptBody.querySelectorAll("[data-placement]").forEach((button) => {
+    container.querySelectorAll("[data-placement]").forEach((button) => {
       button.addEventListener("click", () => choosePlacement(button.dataset.placement));
     });
     return;
   }
 
   if (pendingChoice?.kind === "reaction") {
-    ui.promptBody.innerHTML = `
-      <div><strong>${escapeHtml(pendingChoice.actorName)}</strong> played <strong>${escapeHtml(pendingChoice.effectLabel)}</strong>.</div>
-      <div class="action-row wrap">
+    container.innerHTML = `
+      <div class="combo-prompt-text"><strong>${escapeHtml(pendingChoice.actorName)}</strong> played <strong>${escapeHtml(pendingChoice.effectLabel)}</strong>.</div>
+      <div class="action-row wrap combo-prompt-actions">
         <button id="play-nope-btn" class="primary-btn">Play Nope</button>
         <button id="pass-nope-btn" class="secondary-btn">Let It Happen</button>
       </div>
     `;
-    ui.promptBody.querySelector("#play-nope-btn").addEventListener("click", () => respondNope(true));
-    ui.promptBody.querySelector("#pass-nope-btn").addEventListener("click", () => respondNope(false));
+    container.querySelector("#play-nope-btn").addEventListener("click", () => respondNope(true));
+    container.querySelector("#pass-nope-btn").addEventListener("click", () => respondNope(false));
     return;
   }
 
   if (localAction?.kind === "target-card" || localAction?.kind === "pair") {
-    ui.promptBody.innerHTML = `
-      <div>Choose a player for <strong>${escapeHtml(localAction.label)}</strong>.</div>
+    container.innerHTML = `
+      <div class="combo-prompt-text">Choose a player for <strong>${escapeHtml(localAction.label)}</strong>.</div>
       <div class="target-list">
         ${state.room.availableTargets
           .map(
@@ -1501,20 +1501,20 @@ function renderCenter() {
           )
           .join("")}
       </div>
-      <div class="action-row wrap">
+      <div class="action-row wrap combo-prompt-actions">
         <button id="cancel-local-btn" class="ghost-btn">Cancel</button>
       </div>
     `;
-    ui.promptBody.querySelectorAll("[data-target]").forEach((button) => {
+    container.querySelectorAll("[data-target]").forEach((button) => {
       button.addEventListener("click", () => chooseTarget(button.dataset.target));
     });
-    ui.promptBody.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
+    container.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
     return;
   }
 
   if (localAction?.kind === "trio" && !localAction.targetId) {
-    ui.promptBody.innerHTML = `
-      <div>Choose a player for <strong>3 of a Kind</strong>.</div>
+    container.innerHTML = `
+      <div class="combo-prompt-text">Choose a player for <strong>3 of a Kind</strong>.</div>
       <div class="target-list">
         ${state.room.availableTargets
           .map(
@@ -1523,20 +1523,20 @@ function renderCenter() {
           )
           .join("")}
       </div>
-      <div class="action-row wrap">
+      <div class="action-row wrap combo-prompt-actions">
         <button id="cancel-local-btn" class="ghost-btn">Cancel</button>
       </div>
     `;
-    ui.promptBody.querySelectorAll("[data-target]").forEach((button) => {
+    container.querySelectorAll("[data-target]").forEach((button) => {
       button.addEventListener("click", () => chooseTarget(button.dataset.target));
     });
-    ui.promptBody.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
+    container.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
     return;
   }
 
   if (localAction?.kind === "trio" && localAction.targetId) {
-    ui.promptBody.innerHTML = `
-      <div>Choose which card to request from that player.</div>
+    container.innerHTML = `
+      <div class="combo-prompt-text">Choose which card to request from that player.</div>
       <div class="choice-grid">
         ${state.room.requestOptions
           .map(
@@ -1545,83 +1545,69 @@ function renderCenter() {
           )
           .join("")}
       </div>
-      <div class="action-row wrap">
+      <div class="action-row wrap combo-prompt-actions">
         <button id="cancel-local-btn" class="ghost-btn">Cancel</button>
       </div>
     `;
-    ui.promptBody.querySelectorAll("[data-request]").forEach((button) => {
+    container.querySelectorAll("[data-request]").forEach((button) => {
       button.addEventListener("click", () => chooseRequestedCard(button.dataset.request));
     });
-    ui.promptBody.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
+    container.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
     return;
   }
 
   if (localAction?.kind === "five") {
     const reclaimableCards = (state.room.discardPile || []).filter((card) => card.reclaimable);
     if (reclaimableCards.length === 0) {
-      ui.promptBody.innerHTML = `
-        <div>The discard pile does not have a reclaimable card yet.</div>
-        <div class="action-row wrap">
+      container.innerHTML = `
+        <div class="combo-prompt-text">The discard pile does not have a reclaimable card yet.</div>
+        <div class="action-row wrap combo-prompt-actions">
           <button id="cancel-local-btn" class="ghost-btn">Cancel</button>
         </div>
       `;
     } else {
-      ui.promptBody.innerHTML = `
-        <div>Use <strong>5 Different Cards</strong>, then click the discard pile to choose 1 card to reclaim.</div>
-        <div class="action-row wrap">
+      container.innerHTML = `
+        <div class="combo-prompt-text">Use <strong>5 Different Cards</strong>, then open the discard pile to choose 1 card to reclaim.</div>
+        <div class="action-row wrap combo-prompt-actions">
           <button id="open-discard-browser-btn" class="secondary-btn">Open Discard Pile</button>
           <button id="cancel-local-btn" class="ghost-btn">Cancel</button>
         </div>
       `;
-      ui.promptBody
+      container
         .querySelector("#open-discard-browser-btn")
         .addEventListener("click", openDiscardBrowser);
     }
 
-    ui.promptBody.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
+    container.querySelector("#cancel-local-btn").addEventListener("click", cancelPendingLocalAction);
     return;
   }
 
-  ui.promptBody.textContent = state.room.promptText;
+  container.innerHTML = "";
 }
 
 function renderLog() {
+  const wasNearBottom =
+    !ui.logFeed ||
+    ui.logFeed.scrollHeight - ui.logFeed.scrollTop - ui.logFeed.clientHeight < 24;
+
   ui.logFeed.innerHTML = "";
 
   if (!state.room || state.room.log.length === 0) {
-    ui.logToggleBtn.hidden = true;
-    ui.logToggleBtn.disabled = true;
-    ui.logToggleBtn.setAttribute("aria-expanded", "false");
     ui.logFeed.innerHTML =
       '<div class="empty-state">The incident log will update as the release unfolds.</div>';
     return;
   }
 
-  const allEntries = state.room.log;
-  const canExpand = allEntries.length > LOG_COLLAPSE_COUNT;
-  const visibleEntries =
-    canExpand && !state.logExpanded ? allEntries.slice(-LOG_COLLAPSE_COUNT) : allEntries;
-
-  ui.logToggleBtn.hidden = !canExpand;
-  ui.logToggleBtn.disabled = !canExpand;
-  ui.logToggleBtn.textContent = state.logExpanded
-    ? `Show Recent ${LOG_COLLAPSE_COUNT}`
-    : `Show Full Log (${allEntries.length})`;
-  ui.logToggleBtn.setAttribute("aria-expanded", String(state.logExpanded));
-
-  if (canExpand && !state.logExpanded) {
-    const summary = document.createElement("div");
-    summary.className = "log-summary";
-    summary.textContent = `Showing the latest ${LOG_COLLAPSE_COUNT} of ${allEntries.length} events.`;
-    ui.logFeed.append(summary);
-  }
-
-  visibleEntries.forEach((entry) => {
+  state.room.log.forEach((entry) => {
     const item = document.createElement("article");
     item.className = "log-item";
     item.textContent = entry;
     ui.logFeed.append(item);
   });
+
+  if (wasNearBottom) {
+    ui.logFeed.scrollTop = ui.logFeed.scrollHeight;
+  }
 }
 
 function renderCrashOverlay() {
@@ -1724,7 +1710,7 @@ function renderDiscardBrowser() {
     return;
   }
 
-  if (!state.discardBrowserOpen || !canBrowseDiscardPile()) {
+  if (!state.discardBrowserOpen || !canOpenDiscardBrowser()) {
     ui.discardBrowserOverlay.hidden = true;
     ui.discardBrowserOverlay.setAttribute("aria-hidden", "true");
     ui.discardBrowserGrid.innerHTML = "";
@@ -1732,11 +1718,14 @@ function renderDiscardBrowser() {
   }
 
   const discardPile = getDiscardBrowserCards();
+  const reclaimMode = canReclaimDiscardCard();
 
   ui.discardBrowserOverlay.hidden = false;
   ui.discardBrowserOverlay.setAttribute("aria-hidden", "false");
   ui.discardBrowserMessage.textContent =
-    "Select 1 card from the discard pile to reclaim with 5 Different Cards.";
+    reclaimMode
+      ? "Select 1 card from the discard pile to reclaim with 5 Different Cards."
+      : "Review the recently used cards here.";
   ui.discardBrowserGrid.innerHTML = "";
 
   if (discardPile.length === 0) {
@@ -1747,27 +1736,29 @@ function renderDiscardBrowser() {
 
   discardPile.forEach((card, index) => {
     const artwork = getCardArt(card.key);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `discard-choice-card ${card.themeClass || ""}${card.reclaimable ? "" : " locked"}`;
-    button.disabled = !card.reclaimable;
-    button.dataset.discard = card.key;
-    button.dataset.index = String(index);
+    const element = document.createElement(reclaimMode ? "button" : "article");
+    if (reclaimMode) {
+      element.type = "button";
+      element.disabled = !card.reclaimable;
+      element.dataset.discard = card.key;
+      element.dataset.index = String(index);
+    }
+    element.className = `discard-choice-card ${card.themeClass || ""}${reclaimMode && !card.reclaimable ? " locked" : ""}${reclaimMode ? "" : " static"}`;
 
     const artMarkup = artwork
       ? `<div class="discard-choice-art" style="${getCardBackgroundStyle(card.key)}"></div>`
       : `<div class="discard-choice-art discard-choice-fallback">${escapeHtml(getCardVisual(card.key).symbol)}</div>`;
 
-    button.innerHTML = `
+    element.innerHTML = `
       ${artMarkup}
-      ${card.reclaimable ? "" : '<span class="discard-choice-lock">Locked</span>'}
+      ${reclaimMode && !card.reclaimable ? '<span class="discard-choice-lock">Locked</span>' : ""}
     `;
 
-    if (card.reclaimable) {
-      button.addEventListener("click", () => chooseDiscardCard(card.key));
+    if (reclaimMode && card.reclaimable) {
+      element.addEventListener("click", () => chooseDiscardCard(card.key));
     }
 
-    ui.discardBrowserGrid.append(button);
+    ui.discardBrowserGrid.append(element);
   });
 }
 
@@ -1780,6 +1771,7 @@ function renderComboBar() {
 
   const stats = selectionStats();
   const locked = !!state.room.pendingChoice || !!state.pendingLocalAction || !state.room.canPlay;
+  const drawState = getDrawUiState();
   const summary =
     stats.total === 0
       ? "No combo-ready cards selected."
@@ -1794,19 +1786,31 @@ function renderComboBar() {
   );
 
   ui.comboBar.innerHTML = `
-    <div class="combo-summary">
-      <strong>Combo Tray</strong>
-      <span>${escapeHtml(summary)}</span>
+    <div class="combo-topline">
+      <div class="combo-summary">
+        <strong>Action Tray</strong>
+        <span>${escapeHtml(summary)}</span>
+      </div>
+      <div class="combo-draw-zone">
+        <button id="draw-btn-inline" class="primary-btn draw-action-btn">Draw To End Turn</button>
+        <p id="draw-status-inline" class="draw-status draw-status-inline"></p>
+      </div>
     </div>
-    <div class="action-row wrap">
+    <div class="action-row wrap combo-actions">
       <button id="play-selected-btn" class="primary-btn">Play Selected Card</button>
       <button id="pair-btn" class="secondary-btn">2 of a Kind</button>
       <button id="trio-btn" class="secondary-btn">3 of a Kind</button>
       <button id="five-btn" class="secondary-btn">5 Different</button>
       <button id="clear-selection-btn" class="ghost-btn">Clear</button>
     </div>
+    <div id="combo-prompt-slot" class="combo-prompt-slot" hidden></div>
   `;
 
+  const drawButton = ui.comboBar.querySelector("#draw-btn-inline");
+  const drawStatus = ui.comboBar.querySelector("#draw-status-inline");
+  drawButton.disabled = drawState.disabled;
+  drawButton.textContent = drawState.label;
+  drawStatus.textContent = drawState.status;
   ui.comboBar.querySelector("#play-selected-btn").disabled = !canPlaySelectedCard;
   ui.comboBar.querySelector("#pair-btn").disabled = locked || !stats.pairReady;
   ui.comboBar.querySelector("#trio-btn").disabled = locked || !stats.trioReady;
@@ -1814,11 +1818,19 @@ function renderComboBar() {
   ui.comboBar.querySelector("#clear-selection-btn").disabled =
     stats.total === 0 && !state.pendingLocalAction;
 
+  drawButton.addEventListener("click", drawCard);
   ui.comboBar.querySelector("#play-selected-btn").addEventListener("click", confirmSelectedAction);
   ui.comboBar.querySelector("#pair-btn").addEventListener("click", beginPair);
   ui.comboBar.querySelector("#trio-btn").addEventListener("click", beginTrio);
   ui.comboBar.querySelector("#five-btn").addEventListener("click", beginFive);
   ui.comboBar.querySelector("#clear-selection-btn").addEventListener("click", clearSelections);
+
+  const promptSlot = ui.comboBar.querySelector("#combo-prompt-slot");
+  const shouldShowPrompt = Boolean(state.room.pendingChoice || state.pendingLocalAction);
+  promptSlot.hidden = !shouldShowPrompt;
+  if (shouldShowPrompt) {
+    mountActionTrayPrompt(promptSlot);
+  }
 }
 
 function renderHand() {
@@ -1899,8 +1911,6 @@ if (ui.leaveRoomLiveBtn) {
 }
 ui.startGameBtn.addEventListener("click", startGame);
 ui.copyRoomBtn.addEventListener("click", copyRoomCode);
-ui.drawBtnBottom.addEventListener("click", drawCard);
-ui.logToggleBtn.addEventListener("click", toggleLogExpansion);
 if (ui.reviewCloseBtn) {
   ui.reviewCloseBtn.addEventListener("click", hidePeerReview);
 }

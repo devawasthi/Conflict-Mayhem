@@ -4,19 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Exploding Productions</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=__ASSET_VERSION__" />
   </head>
   <body>
     <div class="backdrop"></div>
     <main class="shell">
-      <section class="hero panel">
-        <div>
-          <p class="eyebrow">Original multiplayer tech-chaos card battler</p>
-          <h1>Exploding Productions</h1>
-          <p class="hero-copy">
-            Create a room, share the code, and move everyone into a dedicated live room page
-            for the match.
-          </p>
+      <section class="hero room-hero panel">
+        <div class="hero-brand">
+          <div class="game-logo" aria-label="Exploding Productions">
+            <span class="game-logo-kicker">release panic protocol</span>
+            <h1 class="game-logo-wordmark">
+              <span class="game-logo-main">Exploding</span>
+              <span class="game-logo-sub">Productions</span>
+            </h1>
+          </div>
         </div>
         <div class="hero-status">
           <div class="status-pill" id="connection-pill">Connecting</div>
@@ -62,27 +63,11 @@
           <div class="action-row">
             <button id="join-room-btn" class="secondary-btn">Join Room</button>
           </div>
-
-          <p class="hero-note">
-            Joining here hands off to the dedicated room URL so refreshes stay attached to the
-            same room.
-          </p>
         </article>
       </section>
 
       <section class="lobby-grid lobby-grid-secondary">
-        <article class="panel setup-card">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">What happens next</p>
-              <h2>Dedicated Room Page</h2>
-            </div>
-          </div>
-          <p class="hero-note">
-            After a create or join succeeds, you move to <code>/room?room=ABCD</code>. That page
-            handles the match, reconnects, card play, and end-of-round restart.
-          </p>
-        </article>
+        
 
         <article class="panel setup-card">
           <div class="panel-head">
@@ -106,6 +91,6 @@
       <p>Developed by Dev A.</p>
     </footer>
 
-    <script src="app/lobby.js"></script>
+    <script src="app/lobby.js?v=__ASSET_VERSION__"></script>
   </body>
 </html>

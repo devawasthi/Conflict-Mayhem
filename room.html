@@ -4,21 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Exploding Productions Room</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=__ASSET_VERSION__" />
   </head>
   <body>
     <div class="backdrop"></div>
     <main class="shell">
-      <section class="hero panel">
-        <div>
-          <p class="eyebrow">Original multiplayer tech-chaos card battler</p>
-          <h1>Exploding Productions</h1>
+      <section class="hero room-hero panel" id="room-hero">
+        <div class="hero-brand">
+          <div class="game-logo" aria-label="Exploding Productions">
+            <span class="game-logo-kicker">release panic protocol</span>
+            <h1 class="game-logo-wordmark">
+              <span class="game-logo-main">Exploding</span>
+              <span class="game-logo-sub">Productions</span>
+            </h1>
+          </div>
           <p class="hero-copy">
             Live room play, reconnect-aware turns, combo steals, and room reuse after each round.
           </p>
         </div>
         <div class="hero-status">
           <div class="status-pill" id="connection-pill">Connecting</div>
+          <button id="leave-room-live-btn" class="danger-btn hero-leave-btn" type="button" hidden>Leave Room</button>
         </div>
       </section>
 
@@ -57,7 +63,7 @@
           </p>
         </article>
 
-        <article class="panel room-card" id="room-card">
+        <article class="panel room-card compact-room-card" id="room-card">
           <div class="panel-head">
             <div>
               <p class="eyebrow">Current room</p>
@@ -79,7 +85,6 @@
           <div class="action-row wrap">
             <button id="start-game-btn" class="primary-btn">Start Match</button>
             <button id="copy-room-btn" class="secondary-btn">Copy Code</button>
-            <button id="leave-room-live-btn" class="danger-btn" type="button" hidden>Leave Room</button>
           </div>
 
           <p id="notice-banner" class="notice-banner">
@@ -88,97 +93,61 @@
         </article>
       </section>
 
-      <section id="turn-ribbon" class="panel turn-ribbon" hidden>
-        <div class="turn-ribbon-copy">
-          <p class="eyebrow">Turn tracker</p>
-          <h2 id="turn-ribbon-title" class="turn-ribbon-title">Waiting For Players</h2>
-          <p id="turn-ribbon-status" class="turn-ribbon-status">Join the room to begin.</p>
-        </div>
-      </section>
-
-      <section class="board-grid">
-        <article class="panel players-card">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Players</p>
-              <h2>Engineering Team</h2>
-            </div>
-          </div>
-          <div id="players-list" class="players-list"></div>
-        </article>
-
-        <article class="panel table-card">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Match status</p>
-              <h2 id="turn-title">Waiting For Players</h2>
-            </div>
-          </div>
-
-          <div class="deck-zone">
-            <div class="stack-card deck-stack">
-              <span class="stack-label">Deck</span>
-              <strong id="deck-count">0 cards</strong>
-              <p>Production Crashes, deploys, and desk-drawer tech loot.</p>
-            </div>
-
-            <div class="stack-card discard-stack">
-              <span class="stack-label">Discard</span>
-              <strong id="discard-name">0 cards</strong>
-              <button
-                id="discard-pile-btn"
-                class="discard-pile-btn"
-                type="button"
-                aria-haspopup="dialog"
-                aria-expanded="false"
-                disabled
-              >
-                <div id="discard-pile" class="discard-pile empty">
-                  <div class="discard-empty">Discard pile is empty.</div>
+      <section class="dashboard-grid">
+        <div class="center-stage">
+          <div class="play-row" id="play-row">
+            <article class="panel players-card" id="players-card" hidden>
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Players</p>
+                  <h2>Engineering Team</h2>
                 </div>
-              </button>
-              <p id="discard-hint" class="discard-hint">Played cards stack here.</p>
+              </div>
+              <div id="players-list" class="players-list"></div>
+            </article>
+
+            <section class="panel hand-card">
+              <div class="hand-meta-row">
+                <p id="hand-summary" class="hand-summary">No cards in hand yet.</p>
+              </div>
+
+              <div id="hand-grid" class="hand-grid"></div>
+              <div id="combo-bar" class="combo-bar"></div>
+            </section>
+
+            <div class="side-stack" id="side-stack" hidden>
+              <article class="panel deck-card">
+                <div class="stack-card deck-stack compact-deck-stack">
+                  <span class="stack-label">Deck</span>
+                  <strong id="deck-count">0 cards</strong>
+                  <p>Production Crashes and playable chaos.</p>
+                </div>
+                <button
+                  id="discard-pile-btn"
+                  class="discard-launch-btn"
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  disabled
+                >
+                  <span class="stack-label">Discard pile</span>
+                  <strong id="discard-name">0 cards</strong>
+                  <span class="discard-launch-copy">Open when needed</span>
+                </button>
+                <p id="discard-hint" class="discard-hint">Reveal used cards in a popup when needed.</p>
+              </article>
+
+              <article class="panel log-card">
+                <div class="panel-head">
+                  <div>
+                    <h2>Incident Log</h2>
+                  </div>
+                </div>
+                <div id="log-feed" class="log-feed"></div>
+              </article>
             </div>
           </div>
-        </article>
-
-        <article class="panel log-card">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Timeline</p>
-              <h2>Incident Log</h2>
-            </div>
-            <button id="log-toggle-btn" class="ghost-btn log-toggle-btn" type="button" hidden>
-              Show Full Log
-            </button>
-          </div>
-          <div id="log-feed" class="log-feed"></div>
-        </article>
-      </section>
-
-      <section class="panel hand-card">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Your hand</p>
-            <h2>Toolbox Cards</h2>
-          </div>
-          <p id="hand-summary" class="hand-summary">No cards in hand yet.</p>
         </div>
-
-        <div id="prompt-card" class="prompt-card prompt-card-inline">
-          <p class="eyebrow">Action prompt</p>
-          <div id="prompt-body" class="prompt-body">Join the room to begin.</div>
-        </div>
-
-        <div class="turn-action-bar">
-          <button id="draw-btn-bottom" class="primary-btn">Draw To End Turn</button>
-          <p id="draw-status" class="draw-status">
-            This control becomes available during your turn.
-          </p>
-        </div>
-
-        <div id="hand-grid" class="hand-grid"></div>
-        <div id="combo-bar" class="combo-bar"></div>
       </section>
     </main>
 
@@ -230,12 +199,12 @@
         <div class="panel-head review-head">
           <div>
             <p class="eyebrow">Discard pile</p>
-            <h2>Reclaim 1 Card</h2>
+            <h2>Discard Pile</h2>
           </div>
           <button id="discard-browser-close-btn" class="ghost-btn" type="button">Close</button>
         </div>
         <p id="discard-browser-message" class="review-message">
-          Select 1 card from the discard pile to reclaim.
+          Review the recently used cards here.
         </p>
         <div id="discard-browser-grid" class="discard-browser-grid"></div>
       </div>
@@ -246,6 +215,6 @@
       <p>Developed by Dev A.</p>
     </footer>
 
-    <script src="app/room.js"></script>
+    <script src="app/room.js?v=__ASSET_VERSION__"></script>
   </body>
 </html>

@@ -32,6 +32,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Drawing `Production Crash` with `Blame The Intern` discards both cards.
 - Production Crash count per round is exactly `(player count - 1)`.
 - If the draw deck runs out and there are used cards in the discard pile, the discard pile is shuffled back into the deck instead of immediately ending the round.
+- If both the draw deck and discard pile run dry before one player remains, the server creates a short sudden-death deck instead of awarding an arbitrary winner.
 - Combo rules:
   - `2` matching cards: steal a random card
   - `3` matching cards: request a specific card
@@ -64,40 +65,50 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Refreshing in the same browser should rejoin the same room seat automatically.
 - Explicit `Leave` clears the stored reconnect token for that room.
 - Room creation and general code entry now happen on the lobby page, while active gameplay lives on the dedicated room page.
-- During a live match, the room access controls collapse and the active room panel remains as the primary room-control area.
+- During a live match, the room access controls collapse and the `Current Room` panel is hidden so gameplay stays in focus.
 
 ## Server Notes
 
 - Room state is held in memory inside a single Python process.
 - This should run as a single instance unless shared persistent state is added.
 - Player reconnection is handled by a per-player session token stored on the client.
-- Disconnecting mid-match now preserves the seat for reconnect instead of eliminating the player immediately.
+- Disconnecting mid-match preserves the seat briefly, but players are auto-eliminated if they do not reconnect within the server grace period.
 
 ## UI Notes
 
 - Card art lives in `assets/cards/`.
 - The live deck should use the consistent illustrated `Git Rekt`-style card-art set; avoid mixing in unrelated standalone images for individual cards.
 - The card-art mappings should stay aligned with the current filenames in `assets/cards/`, including `skip.webp`, `shuffle.webp`, `sprint-planning.webp`, `coffee-break.webp`, `mechanical-keyboard.webp`, and `posh-training.webp`.
-- The incident log is collapsible.
+- The incident log is always scrollable, defaults to the latest visible entries, and no longer uses a `Show Full Log` expand/collapse control.
 - A `Production Crash` overlay animation appears for crash moments.
 - Draws and action plays now use a lightweight animated moment overlay.
 - Random steals and requested-card transfers now trigger the same card-gain moment treatment so the gained card is visible immediately.
 - `Peer Review` now opens a private reveal panel showing the next three cards.
-- The hand area contains the primary turn-ending draw control.
-- The action prompt now lives directly above the hand controls instead of in the center board column.
-- A compact sticky turn ribbon now sits above the board during live matches, the room-access card is hidden once a match has started, and the combo tray sits below the hand cards.
+- The live room now uses a simplified three-panel play row: `Engineering Team` on the left, `Toolbox Cards` in the center, and the `Incident Log` on the right.
+- The old board-state panel has been removed from the live room. `Deck & Discard` now live in their own right-rail panel above the `Incident Log`, and the discard pile is opened as a popup only when needed.
+- Before the host starts the match, `Engineering Team`, `Deck & Discard`, and `Incident Log` stay hidden so the room screen remains focused on joining and the hand area.
+- Before the host starts the match, `Current Room` stays on the same top row as `Room access`, while the live-play side panels remain hidden.
+- Those live-play side panels are also marked `hidden` in the initial room HTML so they do not flash briefly before the room script applies state.
+- The room hero now keeps the same title treatment before and after the match starts, while the separate room-access card is still hidden during live play.
+- The compact live-room hero is intentionally very slim so it behaves like a top utility bar instead of a landing-page banner.
+- The live-room header now uses a centered stylized wordmark without a boxed title container, and the in-room `Leave Room` action sits next to the connection badge.
+- The standalone action-prompt panel has been removed; interactive prompts like reactions, target selection, and crash placement now render inline inside the action tray.
+- The draw control is fused into the combo tray as part of the same action area rather than living in a separate section.
 - All non-`Production Crash` cards can be selected into the combo tray, while turn-playable actions still use the same confirm-to-play flow.
 - Card selections clear automatically when your turn ends.
 - The room panel now exposes an in-match `Leave Room` button after the game has started.
 - The match board now uses shorter stack placeholders, shorter hand cards, and a shorter incident log with internal scrolling.
 - Incident log entries are intentionally compact so more recent events stay visible without crowding the board.
+- Incident log items now use tighter padding and smaller type to increase visible history density, with the visible log window capped to roughly the latest five entries before scrolling.
+- The `Your hand` card count now sits inline with the hand label instead of floating to the far edge of the panel.
 - The incident log now allows a taller visible area and wraps its header controls so titles and buttons do not clip on narrower layouts.
-- The discard pile now renders as a stacked visual pile instead of showing the top card description text.
+- The discard pile is no longer shown inline on the board; it opens in the discard-browser popup for both browsing and reclaim interactions.
 - Hand tiles are art-first and do not repeat the card name/description below the artwork.
 - Hand-tile artwork is intentionally enlarged so the illustrated card face remains the primary readable element.
 - Hand-card grid width and tile height were increased again so the card artwork reads comfortably without the removed text block.
 - The hand now renders as the actual card faces with only minimal count/selection overlays instead of tag/icon placeholder chips.
 - Hand cards explicitly pin to the top of the grid and keep full opacity when not playable so the row still reads as a clean set of aligned card faces.
+- `count-pill`, `selected-pill`, and the fused draw-action tray should stay in the same cool accent family for visual consistency.
 - The `5 Different Tools` combo now uses the discard pile itself as the interaction point and opens a full discard-browser overlay for choosing the reclaim target.
 - `Rubber Duck` and the `Mechanical Keyboard` slot keep custom horizontal positioning, but no longer render smaller than the rest of the deck.
 
@@ -106,6 +117,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Suitable for a single-instance Render / VM / Docker deployment.
 - Avoid horizontal scaling until room state is moved out of memory.
 - Docker support already exists in [Dockerfile](Dockerfile).
+- `index.html` and `room.html` are now served as lightweight templates so JS/CSS asset URLs receive an automatic version query string from the server on each new build/restart.
 
 ## Recent Changes
 
@@ -118,6 +130,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Compressed the board, log, and hand card sizing to fit more of the match on screen at once.
 - Split the frontend into a lobby page and a dedicated room page.
 - Added discard recycling back into the deck to extend rounds.
+- Added disconnect grace handling, sudden-death deck fallback, alive-player deck normalization, and randomized starting player selection to reduce stalls and repetitive rounds.
 - Added restart-match reuse for finished rooms via the existing host start control.
 - Added auto-target behavior for steals when only one opponent remains available.
 - Stabilized the hand grid so fewer cards no longer expand and resize unpredictably.

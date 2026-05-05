@@ -22,6 +22,8 @@ BASE_DIR = Path(__file__).resolve().parent
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_LOG_ENTRIES = 30
 MAX_ROOM_SIZE = 6
+ASSET_VERSION_TOKEN = "__ASSET_VERSION__"
+DISCONNECT_GRACE_SECONDS = 25
 
 SNACK_KEYS = ["cookie", "donut", "pretzel", "popcorn", "candy"]
 DISPLAY_ORDER = [
@@ -36,6 +38,10 @@ DISPLAY_ORDER = [
     *SNACK_KEYS,
 ]
 REQUESTABLE_KEYS = [key for key in DISPLAY_ORDER if key != "hotPotato"]
+HTML_TEMPLATE_PATHS = {
+    "/index.html": BASE_DIR / "index.html",
+    "/room.html": BASE_DIR / "room.html",
+}
 
 CARD_CATALOG = {
     "hotPotato": {
@@ -189,6 +195,24 @@ def make_card_payload(card_key: str) -> dict:
         "needsTarget": card["needsTarget"],
         "isSnack": card["group"] == "snack",
     }
+
+
+def current_asset_version() -> str:
+    configured = os.getenv("BUILD_VERSION")
+    if configured:
+        return configured
+
+    asset_paths = [
+        BASE_DIR / "styles.css",
+        BASE_DIR / "index.html",
+        BASE_DIR / "room.html",
+        BASE_DIR / "app" / "lobby.js",
+        BASE_DIR / "app" / "room.js",
+    ]
+    existing = [path for path in asset_paths if path.exists()]
+    if not existing:
+        return "dev"
+    return str(max(path.stat().st_mtime_ns for path in existing))
 
 
 @dataclass
@@ -457,18 +481,27 @@ class GameRoom:
 
         return result
 
-    def target_hot_potato_count(self) -> int:
-        return max(0, self.match_player_count - 1)
+    def live_player_count(self) -> int:
+        if self.started:
+            return len(self.alive_players())
+        return self.match_player_count or len(self.connected_players())
 
-    def target_oven_mitt_total(self) -> int:
-        if self.match_player_count <= 0:
+    def target_hot_potato_count(self, player_count: Optional[int] = None) -> int:
+        count = self.live_player_count() if player_count is None else player_count
+        return max(0, count - 1)
+
+    def target_oven_mitt_total(self, player_count: Optional[int] = None) -> int:
+        count = self.live_player_count() if player_count is None else player_count
+        if count <= 0:
             return 0
-        return self.target_hot_potato_count() + 1
+        return self.target_hot_potato_count(count) + 1
 
-    def normalize_deck(self, cards: list[str], cap: Optional[int] = None) -> list[str]:
+    def normalize_deck(
+        self, cards: list[str], cap: Optional[int] = None, player_count: Optional[int] = None
+    ) -> list[str]:
         non_special_cards = [card for card in cards if card not in {"hotPotato", "ovenMitt"}]
-        desired_hot_potatoes = self.target_hot_potato_count()
-        desired_oven_mitts = self.target_oven_mitt_total()
+        desired_hot_potatoes = self.target_hot_potato_count(player_count)
+        desired_oven_mitts = self.target_oven_mitt_total(player_count)
 
         mandatory_cards = ["hotPotato"] * desired_hot_potatoes + ["ovenMitt"] * desired_oven_mitts
         if cap is None:
@@ -513,9 +546,9 @@ class GameRoom:
             for player in self.players:
                 player.hand.append(self.deck.pop())
 
-        self.deck = self.normalize_deck(self.deck)
+        self.deck = self.normalize_deck(self.deck, player_count=len(self.players))
 
-        self.current_player_id = self.players[0].id
+        self.current_player_id = random.choice(self.players).id
         self.add_log("A new Exploding Productions match began.")
 
     def leave_player(self, player_id: str) -> bool:
@@ -563,7 +596,7 @@ class GameRoom:
             return False
 
         if player.alive:
-            self.add_log(f"{player.name} disconnected. Their seat is reserved until they reconnect.")
+            self.add_log(f"{player.name} disconnected and has {DISCONNECT_GRACE_SECONDS} seconds to return.")
         else:
             self.add_log(f"{player.name} disconnected after being eliminated.")
 
@@ -662,7 +695,7 @@ class GameRoom:
         if reason == "hotPotato":
             self.add_log(f"{player.name} was knocked out by a Production Crash.")
         elif reason == "disconnect":
-            self.add_log(f"{player.name} is out because they left the table.")
+            self.add_log(f"{player.name} did not reconnect in time and is out.")
         elif reason == "leave":
             self.add_log(f"{player.name} left the match and is out.")
 
@@ -701,8 +734,16 @@ class GameRoom:
         if not self.discard:
             return False
 
-        self.deck = self.normalize_deck(self.discard)
+        self.deck = self.normalize_deck(self.discard, player_count=len(self.alive_players()))
         self.discard.clear()
+        return bool(self.deck)
+
+    def build_sudden_death_deck(self) -> bool:
+        alive_count = len(self.alive_players())
+        if alive_count <= 1:
+            return False
+
+        self.deck = self.normalize_deck([], player_count=alive_count)
         return bool(self.deck)
 
     def start_effect(self, effect: dict) -> list[tuple[WebSocketConnection, dict]]:
@@ -903,13 +944,18 @@ class GameRoom:
         if not self.deck:
             if self.recycle_discard_into_deck():
                 self.add_log("The discard pile was shuffled back into the deck.")
+            elif self.build_sudden_death_deck():
+                self.add_log("The deck ran dry, so sudden-death cards were added to keep the release panic going.")
 
         if not self.deck:
-            winner = next((other for other in self.alive_players() if other.id != player.id), None)
-            if winner:
+            survivors = self.alive_players()
+            if len(survivors) == 1:
+                winner = survivors[0]
                 self.winner_id = winner.id
                 self.current_player_id = winner.id
                 self.add_log(f"The deck ran dry. {winner.name} wins by survival.")
+            else:
+                self.add_log("The deck ran dry, but no winner could be determined yet.")
             return []
 
         drawn = self.deck.pop()
@@ -1236,7 +1282,10 @@ class GameRoom:
                 prompt_text = "Play one action or combo, or draw immediately to end your turn."
         elif self.started:
             if current_player and not current_player.connected:
-                prompt_text = f"Waiting for {current_player.name} to reconnect before the match continues."
+                prompt_text = (
+                    f"Waiting for {current_player.name} to reconnect. "
+                    f"They will be removed if they stay away too long."
+                )
             else:
                 prompt_text = "Watch the incident queue and wait for your turn."
 
@@ -1299,6 +1348,7 @@ class RoomManager:
     def __init__(self):
         self.rooms: dict[str, GameRoom] = {}
         self.lock = threading.RLock()
+        self.disconnect_timers: dict[tuple[str, str], threading.Timer] = {}
 
     def create_room_code(self) -> str:
         alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -1327,6 +1377,49 @@ class RoomManager:
                 target_connection.send_json(payload)
             except OSError:
                 pass
+
+    def cancel_disconnect_timeout(self, room_code: str, player_id: str) -> None:
+        timer = self.disconnect_timers.pop((room_code, player_id), None)
+        if timer:
+            timer.cancel()
+
+    def cancel_room_disconnect_timeouts(self, room_code: str) -> None:
+        active_keys = [key for key in self.disconnect_timers if key[0] == room_code]
+        for key in active_keys:
+            timer = self.disconnect_timers.pop(key, None)
+            if timer:
+                timer.cancel()
+
+    def schedule_disconnect_timeout(self, room_code: str, player_id: str) -> None:
+        self.cancel_disconnect_timeout(room_code, player_id)
+        timer = threading.Timer(
+            DISCONNECT_GRACE_SECONDS, self.expire_disconnected_player, args=(room_code, player_id)
+        )
+        timer.daemon = True
+        self.disconnect_timers[(room_code, player_id)] = timer
+        timer.start()
+
+    def expire_disconnected_player(self, room_code: str, player_id: str) -> None:
+        with self.lock:
+            self.cancel_disconnect_timeout(room_code, player_id)
+            room = self.rooms.get(room_code)
+            if not room:
+                return
+
+            player = room.get_player(player_id)
+            if not player or player.connected or not room.started or not player.alive:
+                return
+
+            room.cleanup_pending_for_departure(player.id)
+            room.eliminate_player(player, reason="disconnect")
+            room.ensure_host()
+
+            if not room.connected_players():
+                self.cancel_room_disconnect_timeouts(room.code)
+                self.rooms.pop(room.code, None)
+                return
+
+            room.broadcast_state()
 
     def handle_message(self, connection: WebSocketConnection, payload: str) -> None:
         try:
@@ -1402,6 +1495,7 @@ class RoomManager:
         if reconnect_token:
             player = room.reconnect_player(connection, clean_name, reconnect_token)
             if player:
+                self.cancel_disconnect_timeout(code, player.id)
                 self.send_info(connection, f"Rejoined room {code}.")
                 room.broadcast_state()
                 return
@@ -1427,9 +1521,11 @@ class RoomManager:
             connection.send_json({"type": "left_room"})
             return
 
+        self.cancel_disconnect_timeout(room.code, connection.player_id)
         empty = room.leave_player(connection.player_id)
         connection.send_json({"type": "left_room"})
         if empty:
+            self.cancel_room_disconnect_timeouts(room.code)
             self.rooms.pop(room.code, None)
         else:
             room.broadcast_state()
@@ -1516,10 +1612,14 @@ class RoomManager:
                 connection.close()
                 return
 
+            player = room.get_player(connection.player_id)
             removable = room.disconnect_player(connection.player_id)
             if removable:
+                self.cancel_room_disconnect_timeouts(room.code)
                 self.rooms.pop(room.code, None)
             else:
+                if room.started and player and player.alive:
+                    self.schedule_disconnect_timeout(room.code, player.id)
                 room.broadcast_state()
             connection.close()
 
@@ -1545,6 +1645,21 @@ class GameRequestHandler(SimpleHTTPRequestHandler):
         if include_body:
             self.wfile.write(payload)
 
+    def serve_html_template(self, path: str, include_body: bool) -> None:
+        template_path = HTML_TEMPLATE_PATHS[path]
+        payload = (
+            template_path.read_text(encoding="utf-8")
+            .replace(ASSET_VERSION_TOKEN, current_asset_version())
+            .encode("utf-8")
+        )
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.end_headers()
+        if include_body:
+            self.wfile.write(payload)
+
     def do_GET(self):
         parsed = urlsplit(self.path)
         if parsed.path == "/ws":
@@ -1555,6 +1670,9 @@ class GameRequestHandler(SimpleHTTPRequestHandler):
             return
 
         self.rewrite_static_path(parsed)
+        if self.path in HTML_TEMPLATE_PATHS:
+            self.serve_html_template(self.path, include_body=True)
+            return
         return super().do_GET()
 
     def do_HEAD(self):
@@ -1564,6 +1682,9 @@ class GameRequestHandler(SimpleHTTPRequestHandler):
             return
 
         self.rewrite_static_path(parsed)
+        if self.path in HTML_TEMPLATE_PATHS:
+            self.serve_html_template(self.path, include_body=False)
+            return
         return super().do_HEAD()
 
     def handle_websocket(self):
