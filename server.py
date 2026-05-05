@@ -92,7 +92,7 @@ CARD_CATALOG = {
     "attack": {
         "name": "Sprint Planning",
         "tag": "Action",
-        "description": "Force the next player to take an extra draw. You still draw to end your turn.",
+        "description": "Force the next player to take two extra draws. You still draw to end your turn.",
         "themeClass": "theme-attack",
         "group": "action",
         "turnPlayable": True,
@@ -486,22 +486,35 @@ class GameRoom:
             return len(self.alive_players())
         return self.match_player_count or len(self.connected_players())
 
+    def round_player_count(self) -> int:
+        return self.match_player_count or len(self.connected_players())
+
+    def live_oven_mitts_in_hands(self) -> int:
+        return sum(player.hand.count("ovenMitt") for player in self.players if player.alive)
+
     def target_hot_potato_count(self, player_count: Optional[int] = None) -> int:
         count = self.live_player_count() if player_count is None else player_count
-        return max(0, count - 1)
+        if count <= 1:
+            return 0
+        return count
 
     def target_oven_mitt_total(self, player_count: Optional[int] = None) -> int:
-        count = self.live_player_count() if player_count is None else player_count
+        count = self.round_player_count() if player_count is None else player_count
         if count <= 0:
             return 0
-        return self.target_hot_potato_count(count) + 1
+        return count
+
+    def target_oven_mitt_count_in_deck(self, player_count: Optional[int] = None) -> int:
+        total_target = self.target_oven_mitt_total(player_count)
+        mitts_in_hands = self.live_oven_mitts_in_hands()
+        return max(0, total_target - mitts_in_hands)
 
     def normalize_deck(
         self, cards: list[str], cap: Optional[int] = None, player_count: Optional[int] = None
     ) -> list[str]:
         non_special_cards = [card for card in cards if card not in {"hotPotato", "ovenMitt"}]
         desired_hot_potatoes = self.target_hot_potato_count(player_count)
-        desired_oven_mitts = self.target_oven_mitt_total(player_count)
+        desired_oven_mitts = self.target_oven_mitt_count_in_deck(player_count)
 
         mandatory_cards = ["hotPotato"] * desired_hot_potatoes + ["ovenMitt"] * desired_oven_mitts
         if cap is None:
@@ -546,7 +559,7 @@ class GameRoom:
             for player in self.players:
                 player.hand.append(self.deck.pop())
 
-        self.deck = self.normalize_deck(self.deck, player_count=len(self.players))
+        self.deck = self.normalize_deck(self.deck)
 
         self.current_player_id = random.choice(self.players).id
         self.add_log("A new Exploding Productions match began.")
@@ -734,7 +747,7 @@ class GameRoom:
         if not self.discard:
             return False
 
-        self.deck = self.normalize_deck(self.discard, player_count=len(self.alive_players()))
+        self.deck = self.normalize_deck(self.discard)
         self.discard.clear()
         return bool(self.deck)
 
@@ -743,8 +756,18 @@ class GameRoom:
         if alive_count <= 1:
             return False
 
-        self.deck = self.normalize_deck([], player_count=alive_count)
+        self.deck = self.normalize_deck([])
         return bool(self.deck)
+
+    def ensure_hot_potato_in_deck(self) -> bool:
+        if len(self.alive_players()) <= 1:
+            return False
+        if "hotPotato" in self.deck:
+            return False
+
+        insert_at = random.randint(0, len(self.deck))
+        self.deck.insert(insert_at, "hotPotato")
+        return True
 
     def start_effect(self, effect: dict) -> list[tuple[WebSocketConnection, dict]]:
         actor = self.get_player(effect["actor_id"])
@@ -965,6 +988,8 @@ class GameRoom:
             if "ovenMitt" not in player.hand:
                 self.discard.append("hotPotato")
                 self.eliminate_player(player, reason="hotPotato")
+                if self.ensure_hot_potato_in_deck():
+                    self.add_log("A Production Crash was pushed back into the release queue to keep the pressure on.")
                 return messages
 
             player.hand.remove("ovenMitt")
@@ -972,12 +997,22 @@ class GameRoom:
             self.discard.append("ovenMitt")
             player.required_draws = max(0, player.required_draws - 1)
             self.add_log(f"{player.name} neutralized a Production Crash by blaming the intern.")
+            crash_requeued = self.ensure_hot_potato_in_deck()
+            if crash_requeued:
+                self.add_log("The neutralized Production Crash was quietly re-queued so the panic never fully disappears.")
             messages.append(
                 (
                     player.connection,
                     {
                         "type": "info",
-                        "message": "You neutralized a Production Crash. Both the crash and Blame The Intern were discarded.",
+                        "message": (
+                            "You neutralized a Production Crash. "
+                            + (
+                                "Blame The Intern was discarded and the crash was re-queued."
+                                if crash_requeued
+                                else "Both the crash and Blame The Intern were discarded."
+                            )
+                        ),
                     },
                 )
             )
@@ -1081,7 +1116,7 @@ class GameRoom:
             next_player = self.next_alive_after(actor.id)
             if not next_player:
                 return messages
-            next_player.required_draws += 1
+            next_player.required_draws += 2
             self.add_log(f"{actor.name} attacked. {next_player.name} must draw {next_player.required_draws} cards.")
             return messages
 

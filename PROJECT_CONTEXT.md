@@ -22,15 +22,15 @@ This file is the quick-reference notes file for the project. Update it whenever 
 ## Core Game Rules
 
 - Each player starts with `1` `Blame The Intern` and `5` random cards.
-- The draw deck keeps `Blame The Intern` at `(Production Crashes left in deck + 1)`, while each player still starts with `1` guaranteed copy in hand.
+- The game keeps total `Blame The Intern` availability tied to the round player count, while each player still starts with `1` guaranteed copy in hand.
 - The draw pile now uses the full normal deck size after setup instead of the temporary `10`-card test cap.
 - A turn normally ends with a draw.
 - `Skip` is the only action card that skips the turn-ending draw.
-- `Sprint Planning` gives the next player `+1` required draw, but the acting player still draws to end their own turn.
+- `Sprint Planning` gives the next player `+2` required draws, but the acting player still draws to end their own turn.
 - `Nope` cancels the latest action or combo unless another `Nope` flips it back.
 - Drawing `Production Crash` without `Blame The Intern` eliminates the player.
-- Drawing `Production Crash` with `Blame The Intern` discards both cards.
-- Production Crash count per round is exactly `(player count - 1)`.
+- Drawing `Production Crash` with `Blame The Intern` discards the mitt, and the server can re-queue the crash if the deck would otherwise go crash-free.
+- Production Crash pressure scales with the number of alive players, and the deck should never stay at `0` Production Crashes while more than one player is still alive.
 - If the draw deck runs out and there are used cards in the discard pile, the discard pile is shuffled back into the deck instead of immediately ending the round.
 - If both the draw deck and discard pile run dry before one player remains, the server creates a short sudden-death deck instead of awarding an arbitrary winner.
 - Combo rules:
@@ -83,6 +83,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - A `Production Crash` overlay animation appears for crash moments.
 - Draws and action plays now use a lightweight animated moment overlay.
 - Random steals and requested-card transfers now trigger the same card-gain moment treatment so the gained card is visible immediately.
+- Losing a card to a random steal now triggers a stronger alert-style popup for the victim, so the interaction is visible instead of feeling silent.
 - `Peer Review` now opens a private reveal panel showing the next three cards.
 - The live room now uses a simplified three-panel play row: `Engineering Team` on the left, `Toolbox Cards` in the center, and the `Incident Log` on the right.
 - The old board-state panel has been removed from the live room. `Deck & Discard` now live in their own right-rail panel above the `Incident Log`, and the discard pile is opened as a popup only when needed.
@@ -94,6 +95,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - The live-room header now uses a centered stylized wordmark without a boxed title container, and the in-room `Leave Room` action sits next to the connection badge.
 - The standalone action-prompt panel has been removed; interactive prompts like reactions, target selection, and crash placement now render inline inside the action tray.
 - The draw control is fused into the combo tray as part of the same action area rather than living in a separate section.
+- The action tray is now sticky near the bottom of the hand area so draw/combo controls stay accessible while scrolling the room.
 - All non-`Production Crash` cards can be selected into the combo tray, while turn-playable actions still use the same confirm-to-play flow.
 - Card selections clear automatically when your turn ends.
 - The room panel now exposes an in-match `Leave Room` button after the game has started.
@@ -102,14 +104,18 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Incident log items now use tighter padding and smaller type to increase visible history density, with the visible log window capped to roughly the latest five entries before scrolling.
 - The `Your hand` card count now sits inline with the hand label instead of floating to the far edge of the panel.
 - The hand summary now uses a visual readiness meter so the current card count reads like a compact status component instead of plain text.
+- The hand summary count is now styled as a compact `cards in hand` status instead of a large pill badge.
 - The incident log now allows a taller visible area and wraps its header controls so titles and buttons do not clip on narrower layouts.
 - The discard pile is no longer shown inline on the board; it opens in the discard-browser popup for both browsing and reclaim interactions.
+- The deck/discard card keeps the discard helper copy aligned to the card width so empty-state messaging does not drift outside the panel.
 - Hand tiles are art-first and do not repeat the card name/description below the artwork.
 - Hand cards now reveal the tag, name, and card text on hover/focus so the art-first layout still keeps rules readable.
+- Duplicate hand cards now render as a slight stacked fan, and hovering them pushes the extra copy outward so pairs are easier to read at a glance.
 - Hand-tile artwork is intentionally enlarged so the illustrated card face remains the primary readable element.
 - Hand-card grid width and tile height were increased again so the card artwork reads comfortably without the removed text block.
 - The hand now renders as the actual card faces with only minimal count/selection overlays instead of tag/icon placeholder chips.
 - Card-count pills are intentionally more prominent than before, and the three live panels are separated with subtle vertical dividers during active play.
+- The discard-browser popup uses fixed card widths so discard cards keep a stable size even when the pile is small.
 - Hand cards explicitly pin to the top of the grid and keep full opacity when not playable so the row still reads as a clean set of aligned card faces.
 - `count-pill`, `selected-pill`, and the fused draw-action tray should stay in the same cool accent family for visual consistency.
 - The `5 Different Tools` combo now uses the discard pile itself as the interaction point and opens a full discard-browser overlay for choosing the reclaim target.

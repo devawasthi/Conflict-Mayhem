@@ -498,6 +498,19 @@ function buildInfoMoment(message) {
       title: stealMatch[1],
       text: "This card was stolen from another player.",
       cardKey,
+      tone: "success",
+    };
+  }
+
+  const stolenFromYouMatch = message.match(/^(.*?) stole one of your cards\.$/);
+  if (stolenFromYouMatch) {
+    return {
+      kicker: "Security Breach",
+      title: "Card Stolen",
+      text: `${stolenFromYouMatch[1]} yanked a random card from your hand.`,
+      cardKey: null,
+      symbol: "PM",
+      tone: "danger",
     };
   }
 
@@ -509,6 +522,7 @@ function buildInfoMoment(message) {
       title: receiveMatch[1],
       text: "A requested card was handed over to you.",
       cardKey,
+      tone: "success",
     };
   }
 
@@ -1270,7 +1284,6 @@ function getDrawUiState() {
   return {
     disabled: !state.room.canDraw,
     label: "Draw To End Turn",
-    status: "Use this control to complete your draw for the turn.",
   };
 }
 
@@ -1637,9 +1650,12 @@ function renderMoment() {
   if (!state.moment) {
     ui.momentOverlay.hidden = true;
     ui.momentOverlay.setAttribute("aria-hidden", "true");
+    delete ui.momentOverlay.dataset.tone;
     if (ui.momentArt) {
       ui.momentArt.hidden = true;
       ui.momentArt.style.backgroundImage = "";
+      ui.momentArt.classList.remove("is-symbol");
+      ui.momentArt.textContent = "";
     }
     return;
   }
@@ -1649,15 +1665,25 @@ function renderMoment() {
   ui.momentKicker.textContent = state.moment.kicker;
   ui.momentTitle.textContent = state.moment.title;
   ui.momentText.textContent = state.moment.text;
+  ui.momentOverlay.dataset.tone = state.moment.tone || "default";
 
   const artwork = state.moment.cardKey ? getCardArt(state.moment.cardKey) : null;
   if (ui.momentArt) {
     if (artwork) {
       ui.momentArt.hidden = false;
+      ui.momentArt.classList.remove("is-symbol");
       ui.momentArt.style.cssText = getCardBackgroundStyle(state.moment.cardKey);
+      ui.momentArt.textContent = "";
+    } else if (state.moment.symbol) {
+      ui.momentArt.hidden = false;
+      ui.momentArt.classList.add("is-symbol");
+      ui.momentArt.style.cssText = "";
+      ui.momentArt.textContent = state.moment.symbol;
     } else {
       ui.momentArt.hidden = true;
+      ui.momentArt.classList.remove("is-symbol");
       ui.momentArt.style.cssText = "";
+      ui.momentArt.textContent = "";
     }
   }
 }
@@ -1770,7 +1796,7 @@ function renderHandSummary(totalCards, message) {
   }
 
   const safeCount = Number.isFinite(totalCards) ? Math.max(0, totalCards) : 0;
-  const copy = message || `${safeCount === 1 ? "card" : "cards"} ready`;
+  const copy = message || `${safeCount === 1 ? "card" : "cards"} in hand`;
   const softCap = 12;
   const fillPercent = `${Math.min(safeCount / softCap, 1) * 100}%`;
 
@@ -1857,14 +1883,14 @@ function renderHand() {
   ui.handGrid.innerHTML = "";
 
   if (!state.room) {
-    renderHandSummary(0, "No cards in hand yet");
+    renderHandSummary(0, "No cards in hand");
     ui.handGrid.innerHTML =
       '<div class="empty-state">Join this room to receive your cards.</div>';
     return;
   }
 
   const totalCards = state.room.hand.reduce((sum, card) => sum + card.count, 0);
-  renderHandSummary(totalCards, `${totalCards === 1 ? "card" : "cards"} ready`);
+  renderHandSummary(totalCards, `${totalCards === 1 ? "card" : "cards"} in hand`);
 
   if (state.room.hand.length === 0) {
     ui.handGrid.innerHTML = '<div class="empty-state">You have no cards in hand.</div>';
@@ -1909,6 +1935,23 @@ function renderHand() {
       `
       : `<div class="card-fallback-name">${escapeHtml(card.name)}</div>`;
 
+    const stackGhostMarkup =
+      artwork && card.count > 1
+        ? Array.from({ length: Math.min(card.count - 1, 2) }, (_value, index) => {
+            const layerClass = index === 0 ? "ghost-back" : "ghost-mid";
+            return `<span class="card-stack-ghost ${layerClass}" style="${getCardBackgroundStyle(card.key)}" aria-hidden="true"></span>`;
+          }).join("")
+        : "";
+
+    const stackShellMarkup = artwork
+      ? `
+        <div class="card-stack-shell${card.count > 1 ? " is-stacked" : ""}" data-stack-count="${card.count}">
+          ${stackGhostMarkup}
+          ${artMarkup}
+        </div>
+      `
+      : artMarkup;
+
     const detailMarkup = `
       <div class="card-detail-popover" aria-hidden="true">
         <div class="card-detail-topline">
@@ -1921,7 +1964,7 @@ function renderHand() {
     `;
 
     button.innerHTML = `
-      ${artMarkup}
+      ${stackShellMarkup}
       ${detailMarkup}
       ${metaMarkup}
     `;

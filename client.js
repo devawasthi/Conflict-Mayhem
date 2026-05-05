@@ -1065,7 +1065,7 @@ function renderSetupPanel() {
 
   if (liveMatch) {
     ui.setupCompactNote.textContent =
-      "Room access is tucked away while a live match is in progress. Use the room panel for the active code and room controls.";
+      "Use the room panel for the active code and room controls.";
   }
 }
 
@@ -1137,7 +1137,6 @@ function getDrawUiState() {
   return {
     disabled: !state.room.canDraw,
     label: "Draw To End Turn",
-    status: "Use this control to complete your draw for the turn.",
   };
 }
 
