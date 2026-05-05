@@ -108,7 +108,20 @@
 
             <section class="panel hand-card">
               <div class="hand-meta-row">
-                <p id="hand-summary" class="hand-summary">No cards in hand yet.</p>
+                <div class="hand-readiness">
+                  <p id="hand-summary" class="hand-summary">No cards in hand yet.</p>
+                  <div
+                    id="hand-meter"
+                    class="hand-meter"
+                    role="progressbar"
+                    aria-label="Cards in hand"
+                    aria-valuemin="0"
+                    aria-valuemax="12"
+                    aria-valuenow="0"
+                  >
+                    <span id="hand-meter-fill" class="hand-meter-fill"></span>
+                  </div>
+                </div>
               </div>
 
               <div id="hand-grid" class="hand-grid"></div>

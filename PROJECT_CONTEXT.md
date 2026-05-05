@@ -101,12 +101,15 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Incident log entries are intentionally compact so more recent events stay visible without crowding the board.
 - Incident log items now use tighter padding and smaller type to increase visible history density, with the visible log window capped to roughly the latest five entries before scrolling.
 - The `Your hand` card count now sits inline with the hand label instead of floating to the far edge of the panel.
+- The hand summary now uses a visual readiness meter so the current card count reads like a compact status component instead of plain text.
 - The incident log now allows a taller visible area and wraps its header controls so titles and buttons do not clip on narrower layouts.
 - The discard pile is no longer shown inline on the board; it opens in the discard-browser popup for both browsing and reclaim interactions.
 - Hand tiles are art-first and do not repeat the card name/description below the artwork.
+- Hand cards now reveal the tag, name, and card text on hover/focus so the art-first layout still keeps rules readable.
 - Hand-tile artwork is intentionally enlarged so the illustrated card face remains the primary readable element.
 - Hand-card grid width and tile height were increased again so the card artwork reads comfortably without the removed text block.
 - The hand now renders as the actual card faces with only minimal count/selection overlays instead of tag/icon placeholder chips.
+- Card-count pills are intentionally more prominent than before, and the three live panels are separated with subtle vertical dividers during active play.
 - Hand cards explicitly pin to the top of the grid and keep full opacity when not playable so the row still reads as a clean set of aligned card faces.
 - `count-pill`, `selected-pill`, and the fused draw-action tray should stay in the same cool accent family for visual consistency.
 - The `5 Different Tools` combo now uses the discard pile itself as the interaction point and opens a full discard-browser overlay for choosing the reclaim target.

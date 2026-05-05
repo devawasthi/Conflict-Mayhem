@@ -110,6 +110,8 @@ const ui = {
   comboBar: document.querySelector("#combo-bar"),
   handGrid: document.querySelector("#hand-grid"),
   handSummary: document.querySelector("#hand-summary"),
+  handMeter: document.querySelector("#hand-meter"),
+  handMeterFill: document.querySelector("#hand-meter-fill"),
   crashOverlay: document.querySelector("#crash-overlay"),
   crashOverlayTitle: document.querySelector("#crash-overlay-title"),
   crashOverlayText: document.querySelector("#crash-overlay-text"),
@@ -1762,6 +1764,24 @@ function renderDiscardBrowser() {
   });
 }
 
+function renderHandSummary(totalCards, message) {
+  if (!ui.handSummary || !ui.handMeter || !ui.handMeterFill) {
+    return;
+  }
+
+  const safeCount = Number.isFinite(totalCards) ? Math.max(0, totalCards) : 0;
+  const copy = message || `${safeCount === 1 ? "card" : "cards"} ready`;
+  const softCap = 12;
+  const fillPercent = `${Math.min(safeCount / softCap, 1) * 100}%`;
+
+  ui.handSummary.innerHTML = `
+    <span class="hand-summary-count">${safeCount}</span>
+    <span class="hand-summary-copy">${escapeHtml(copy)}</span>
+  `;
+  ui.handMeterFill.style.width = fillPercent;
+  ui.handMeter.setAttribute("aria-valuenow", String(safeCount));
+}
+
 function renderComboBar() {
   if (!state.room) {
     ui.comboBar.innerHTML =
@@ -1837,14 +1857,14 @@ function renderHand() {
   ui.handGrid.innerHTML = "";
 
   if (!state.room) {
-    ui.handSummary.textContent = "No cards in hand yet.";
+    renderHandSummary(0, "No cards in hand yet");
     ui.handGrid.innerHTML =
       '<div class="empty-state">Join this room to receive your cards.</div>';
     return;
   }
 
   const totalCards = state.room.hand.reduce((sum, card) => sum + card.count, 0);
-  ui.handSummary.textContent = `${totalCards} card${totalCards === 1 ? "" : "s"} ready.`;
+  renderHandSummary(totalCards, `${totalCards === 1 ? "card" : "cards"} ready`);
 
   if (state.room.hand.length === 0) {
     ui.handGrid.innerHTML = '<div class="empty-state">You have no cards in hand.</div>';
@@ -1861,7 +1881,9 @@ function renderHand() {
 
     const clickable = !handLocked && isComboEligibleCard(card);
 
-    button.disabled = !clickable;
+    button.classList.toggle("is-clickable", clickable);
+    button.classList.toggle("is-inactive", !clickable);
+    button.setAttribute("aria-disabled", String(!clickable));
 
     if (selectedCount > 0) {
       button.classList.add("selected");
@@ -1873,8 +1895,8 @@ function renderHand() {
       card.count > 1 || selectedCount > 0
         ? `
         <div class="card-overlay-meta" aria-hidden="true">
-          ${card.count > 1 ? `<span class="count-pill">x${card.count}</span>` : ""}
-          ${selectedCount > 0 ? `<span class="selected-pill">Selected ${selectedCount}</span>` : ""}
+          ${card.count > 1 ? `<span class="count-pill">${card.count} in hand</span>` : ""}
+          ${selectedCount > 0 ? `<span class="selected-pill">${selectedCount} selected</span>` : ""}
         </div>
       `
         : "";
@@ -1887,12 +1909,29 @@ function renderHand() {
       `
       : `<div class="card-fallback-name">${escapeHtml(card.name)}</div>`;
 
+    const detailMarkup = `
+      <div class="card-detail-popover" aria-hidden="true">
+        <div class="card-detail-topline">
+          <span class="card-tag">${escapeHtml(card.tag)}</span>
+          <span class="card-icon">${escapeHtml(getCardVisual(card.key).symbol)}</span>
+        </div>
+        <strong class="card-detail-name">${escapeHtml(card.name)}</strong>
+        <p class="card-detail-text">${escapeHtml(card.description)}</p>
+      </div>
+    `;
+
     button.innerHTML = `
       ${artMarkup}
+      ${detailMarkup}
       ${metaMarkup}
     `;
 
-    button.addEventListener("click", () => playCard(card));
+    button.addEventListener("click", () => {
+      if (!clickable) {
+        return;
+      }
+      playCard(card);
+    });
     ui.handGrid.append(button);
   });
 }
