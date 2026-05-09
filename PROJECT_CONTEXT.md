@@ -113,6 +113,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - The deck/discard card keeps the discard helper copy aligned to the card width so empty-state messaging does not drift outside the panel.
 - The gameplay guide popup must remain scrollable when its card list exceeds the viewport height.
 - The gameplay guide should explain setup, live card counts, turn flow, combo flow, and spectator behavior in clear game-specific language.
+- The guide’s combo section should spell out both the card requirement and the reward, not just the combo name.
 - Hand tiles are art-first and do not repeat the card name/description below the artwork.
 - Hand cards now reveal the tag, name, and card text on hover/focus so the art-first layout still keeps rules readable.
 - Duplicate hand cards now render as a slight stacked fan, and hovering them pushes the extra copy outward so pairs are easier to read at a glance.
@@ -160,3 +161,4 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Incident-log entries now highlight player names in a separate accent color for faster scanability.
 - Spectator mode now works by room code, the pre-match room view only keeps the top access controls visible, and the guide popup is explicitly scrollable.
 - All `Desk Loot` cards now share the same no-power combo-only description everywhere in the UI.
+- The `How To Play` combo strip now explains `2`, `3`, and `5` card combos in plain language.

@@ -217,7 +217,7 @@ function updateRoomUrl(roomCode) {
   window.history.replaceState({}, "", url);
 }
 
-const defaultName = getStoredPlayerName() || `Dev-${Math.floor(Math.random() * 900 + 100)}`;
+const defaultName = getStoredPlayerName() || `Player-${Math.floor(Math.random() * 900 + 100)}`;
 ui.nameInput.value = defaultName;
 
 function socketUrl() {

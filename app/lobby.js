@@ -47,7 +47,7 @@ function sanitizeRoomCode(value) {
 }
 
 function getPlayerName() {
-  const fallbackName = `Dev-${Math.floor(Math.random() * 900 + 100)}`;
+  const fallbackName = ``;
   const rawValue = ui.nameInput.value.trim() || readStorage(PLAYER_NAME_STORAGE_KEY) || fallbackName;
   writeStorage(PLAYER_NAME_STORAGE_KEY, rawValue);
   return rawValue;
@@ -248,7 +248,7 @@ function spectateRoom() {
 
 function hydrateDefaultValues() {
   const storedName = readStorage(PLAYER_NAME_STORAGE_KEY);
-  ui.nameInput.value = storedName || `Dev-${Math.floor(Math.random() * 900 + 100)}`;
+  ui.nameInput.value = storedName || ``;
 
   const roomCode = roomCodeFromUrl();
   if (roomCode) {
