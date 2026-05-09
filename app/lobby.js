@@ -6,15 +6,20 @@ const state = {
   socketStatus: "connecting",
   queue: [],
   room: null,
-  notice: "Create a room or join one to move into the live room page.",
+  notice: "",
 };
 
 const ui = {
   connectionPill: document.querySelector("#connection-pill"),
+  guideBtn: document.querySelector("#guide-btn"),
+  guideOverlay: document.querySelector("#guide-overlay"),
+  guideCloseBtn: document.querySelector("#guide-close-btn"),
   nameInput: document.querySelector("#name-input"),
   roomInput: document.querySelector("#room-input"),
+  playRandomBtn: document.querySelector("#play-random-btn"),
   createRoomBtn: document.querySelector("#create-room-btn"),
   joinRoomBtn: document.querySelector("#join-room-btn"),
+  watchRoomBtn: document.querySelector("#watch-room-btn"),
   setupStatus: document.querySelector("#setup-status"),
 };
 
@@ -90,6 +95,7 @@ function renderConnection() {
 function render() {
   renderConnection();
   ui.setupStatus.textContent = state.notice;
+  ui.setupStatus.hidden = !state.notice;
 }
 
 function socketUrl() {
@@ -195,6 +201,15 @@ function createRoom() {
   });
 }
 
+function joinRandomRoom() {
+  state.notice = "Finding an open room...";
+  render();
+  send({
+    type: "join_random_room",
+    name: getPlayerName(),
+  });
+}
+
 function joinRoom() {
   const roomCode = sanitizeRoomCode(ui.roomInput.value);
   if (!roomCode) {
@@ -213,6 +228,24 @@ function joinRoom() {
   });
 }
 
+function spectateRoom() {
+  const roomCode = sanitizeRoomCode(ui.roomInput.value);
+  if (!roomCode) {
+    state.notice = "Enter a room code first.";
+    render();
+    return;
+  }
+
+  state.notice = `Watching room ${roomCode}...`;
+  render();
+  send({
+    type: "spectate_room",
+    name: getPlayerName(),
+    roomCode,
+    playerToken: getStoredRoomToken(roomCode),
+  });
+}
+
 function hydrateDefaultValues() {
   const storedName = readStorage(PLAYER_NAME_STORAGE_KEY);
   ui.nameInput.value = storedName || `Dev-${Math.floor(Math.random() * 900 + 100)}`;
@@ -220,18 +253,50 @@ function hydrateDefaultValues() {
   const roomCode = roomCodeFromUrl();
   if (roomCode) {
     ui.roomInput.value = roomCode;
-    state.notice = `Room ${roomCode} is ready to join.`;
   }
 }
 
+function openGuide() {
+  if (!ui.guideOverlay) {
+    return;
+  }
+  ui.guideOverlay.hidden = false;
+}
+
+function closeGuide() {
+  if (!ui.guideOverlay) {
+    return;
+  }
+  ui.guideOverlay.hidden = true;
+}
+
+if (ui.playRandomBtn) {
+  ui.playRandomBtn.addEventListener("click", joinRandomRoom);
+}
 ui.createRoomBtn.addEventListener("click", createRoom);
 ui.joinRoomBtn.addEventListener("click", joinRoom);
+if (ui.watchRoomBtn) {
+  ui.watchRoomBtn.addEventListener("click", spectateRoom);
+}
+if (ui.guideBtn) {
+  ui.guideBtn.addEventListener("click", openGuide);
+}
+if (ui.guideCloseBtn) {
+  ui.guideCloseBtn.addEventListener("click", closeGuide);
+}
+if (ui.guideOverlay) {
+  ui.guideOverlay.addEventListener("click", (event) => {
+    if (event.target === ui.guideOverlay) {
+      closeGuide();
+    }
+  });
+}
 ui.nameInput.addEventListener("change", () => {
   writeStorage(PLAYER_NAME_STORAGE_KEY, ui.nameInput.value.trim());
 });
 ui.nameInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
-    createRoom();
+    joinRandomRoom();
   }
 });
 ui.roomInput.addEventListener("keydown", (event) => {

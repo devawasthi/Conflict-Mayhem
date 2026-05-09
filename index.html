@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Exploding Productions</title>
+    <title>Crashing Productions</title>
     <link rel="stylesheet" href="styles.css?v=__ASSET_VERSION__" />
   </head>
   <body>
@@ -11,10 +11,10 @@
     <main class="shell">
       <section class="hero room-hero panel">
         <div class="hero-brand">
-          <div class="game-logo" aria-label="Exploding Productions">
+          <div class="game-logo" aria-label="Crashing Productions">
             <span class="game-logo-kicker">release panic protocol</span>
             <h1 class="game-logo-wordmark">
-              <span class="game-logo-main">Exploding</span>
+              <span class="game-logo-main">Crashing</span>
               <span class="game-logo-sub">Productions</span>
             </h1>
           </div>
@@ -24,12 +24,12 @@
         </div>
       </section>
 
-      <section class="lobby-grid">
-        <article class="panel setup-card">
+      <section class="lobby-grid lobby-grid-primary">
+        <article class="panel setup-card lobby-access-card">
           <div class="panel-head">
             <div>
-              <p class="eyebrow">Create</p>
-              <h2>Start A Room</h2>
+              <p class="eyebrow">Play now</p>
+              <h2>Join A Match</h2>
             </div>
           </div>
 
@@ -38,56 +38,250 @@
             <input id="name-input" type="text" maxlength="24" placeholder="Player name" />
           </label>
 
-          <div class="action-row">
-            <button id="create-room-btn" class="primary-btn">Create Room</button>
-          </div>
-
-          <p id="setup-status" class="setup-status" aria-live="polite">
-            Create a room to generate a code and move into the live match page.
-          </p>
-        </article>
-
-        <article class="panel setup-card">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Join</p>
-              <h2>Enter A Room</h2>
+          <div class="lobby-button-grid">
+            <div class="lobby-button-block">
+              <button id="play-random-btn" class="primary-btn lobby-main-btn">Play</button>
+              <p class="lobby-button-note">Join a random open room.</p>
+            </div>
+            <div class="lobby-button-block">
+              <button id="create-room-btn" class="secondary-btn lobby-main-btn">Create Room</button>
+              <p class="lobby-button-note">Create a private room.</p>
             </div>
           </div>
 
-          <label class="field">
+          <label class="field room-code-field">
             <span>Room code</span>
             <input id="room-input" type="text" maxlength="6" placeholder="ABCD" />
           </label>
 
-          <div class="action-row">
-            <button id="join-room-btn" class="secondary-btn">Join Room</button>
+          <div class="lobby-button-grid lobby-code-button-grid">
+            <div class="lobby-button-block">
+              <button id="join-room-btn" class="secondary-btn lobby-main-btn">Join Room</button>
+              <p class="lobby-button-note">Join with a room code.</p>
+            </div>
+            <div class="lobby-button-block">
+              <button id="watch-room-btn" class="secondary-btn lobby-main-btn">Watch Room</button>
+              <p class="lobby-button-note">Spectate with a room code.</p>
+            </div>
           </div>
+
+          <p id="setup-status" class="setup-status" aria-live="polite" hidden></p>
         </article>
-      </section>
 
-      <section class="lobby-grid lobby-grid-secondary">
-        
-
-        <article class="panel setup-card">
+        <article class="panel setup-card lobby-rules-card">
           <div class="panel-head">
             <div>
               <p class="eyebrow">Table rules</p>
-              <h2>Quick Reminder</h2>
+              <h2>Rule Book</h2>
             </div>
+            <button id="guide-btn" class="ghost-btn guide-icon-btn" type="button" aria-label="Open how to play guide">?</button>
           </div>
           <ul class="rules-list">
-            <li><code>Nope</code> cancels the latest action unless another <code>Nope</code> stops it.</li>
-            <li>Most turns end with a draw. <code>Skip</code> is the only action that skips it.</li>
-            <li>Drawing <code>Production Crash</code> without <code>Blame The Intern</code> knocks you out.</li>
-            <li><code>2</code>, <code>3</code>, and <code>5</code> card combos unlock stronger steals and reclaim plays, even with <code>Nope</code> or <code>Blame The Intern</code>.</li>
+            <li>Each player starts with <code>1</code> <code>Blame The Intern</code> and <code>5</code> random cards.</li>
+            <li>For <code>n</code> active players, the round targets <code>2n</code> <code>Production Crash</code> cards and <code>2n-1</code> total <code>Blame The Intern</code> cards.</li>
+            <li><code>Skip</code> is the only card that lets you end the turn without drawing.</li>
+            <li><code>Nope</code> cancels the latest action or combo unless another <code>Nope</code> stops it.</li>
+            <li>If you draw <code>Production Crash</code> without <code>Blame The Intern</code>, you are out.</li>
+            <li><code>Sprint Planning</code> makes the next player draw <code>2</code> extra cards on their turn.</li>
+            <li>Desk Loot cards have no direct powers on their own, but they drive combo plays.</li>
+            <li><code>2</code> of a kind steals a random card, <code>3</code> of a kind asks for a specific card, and <code>5</code> different cards reclaim from discard.</li>
+            <li><code>Watch Room</code> lets you spectate with a room code if you want to watch instead of play.</li>
           </ul>
         </article>
       </section>
     </main>
 
+    <div id="guide-overlay" class="review-overlay" hidden aria-hidden="true">
+      <div class="review-panel guide-panel">
+        <div class="panel-head review-head">
+          <div>
+            <p class="eyebrow">Gameplay guide</p>
+            <h2>How To Play</h2>
+          </div>
+          <button id="guide-close-btn" class="ghost-btn" type="button">Close</button>
+        </div>
+        <div class="guide-layout">
+          <div class="guide-stage">
+            <div class="guide-hero-fan" aria-hidden="true">
+              <div class="guide-hero-card guide-hero-card-left" style="background-image: url('assets/cards/nope.webp');"></div>
+              <div class="guide-hero-card guide-hero-card-center" style="background-image: url('assets/cards/production-crash.webp');"></div>
+              <div class="guide-hero-card guide-hero-card-right" style="background-image: url('assets/cards/blame-the-intern.webp');"></div>
+            </div>
+            <div class="guide-step-grid">
+              <article class="guide-step-card">
+                <span class="guide-step-number">1</span>
+                <strong>Setup</strong>
+                <p>Every active player starts with <code>1</code> <code>Blame The Intern</code> and <code>5</code> random cards.</p>
+              </article>
+              <article class="guide-step-card">
+                <span class="guide-step-number">2</span>
+                <strong>Play</strong>
+                <p>Use one action card or line up a combo before taking the mandatory end-of-turn draw.</p>
+              </article>
+              <article class="guide-step-card">
+                <span class="guide-step-number">3</span>
+                <strong>Pressure</strong>
+                <p>For <code>n</code> active players, the round pushes toward <code>2n</code> <code>Production Crash</code> cards and <code>2n-1</code> total <code>Blame The Intern</code> cards.</p>
+              </article>
+            </div>
+            <div class="guide-combo-strip">
+              <div class="guide-combo-chip">
+                <span>2</span>
+                <strong>Random steal</strong>
+              </div>
+              <div class="guide-combo-chip">
+                <span>3</span>
+                <strong>Name a card</strong>
+              </div>
+              <div class="guide-combo-chip">
+                <span>5</span>
+                <strong>Reclaim from discard</strong>
+              </div>
+            </div>
+          </div>
+          <div class="guide-copy">
+            <section class="guide-section">
+              <div class="guide-section-head">
+                <h3>Critical Cards</h3>
+                <p>These decide who survives the release.</p>
+              </div>
+              <div class="guide-card-grid">
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/production-crash.webp');"></div>
+                  <div>
+                    <strong>Production Crash</strong>
+                    <p>Draw this without <code>Blame The Intern</code> and you are eliminated. If the deck ever runs out of crashes while more than one player is alive, the discard pile is folded back in and shuffled so the pressure stays live.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/blame-the-intern.webp');"></div>
+                  <div>
+                    <strong>Blame The Intern</strong>
+                    <p>Every active player starts with <code>1</code>. When you draw a <code>Production Crash</code>, this saves you once, then both cards are discarded. The round aims to keep <code>2n-1</code> total copies in circulation for <code>n</code> active players.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/nope.webp');"></div>
+                  <div>
+                    <strong>Nope</strong>
+                    <p>Cancels the latest action or combo unless another <code>Nope</code> answers it. It has no standalone turn effect, but it can still be used in combos.</p>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="guide-section">
+              <div class="guide-section-head">
+                <h3>Action Cards</h3>
+                <p>Play these before the mandatory draw.</p>
+              </div>
+              <div class="guide-card-grid">
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/peer-review.webp');"></div>
+                  <div>
+                    <strong>Peer Review</strong>
+                    <p>Look at the next three cards in the deck privately, then decide whether to play more pressure or simply draw.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/skip.webp');"></div>
+                  <div>
+                    <strong>Skip</strong>
+                    <p>The only action that ends your turn without the usual draw. Every other action or combo still leaves the draw step in place.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/sprint-planning.webp');"></div>
+                  <div>
+                    <strong>Sprint Planning</strong>
+                    <p>The next player owes <code>2</code> extra draws on top of their usual turn draw, while you still draw to end your own turn.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/shuffle.webp');"></div>
+                  <div>
+                    <strong>Shuffle</strong>
+                    <p>Scramble the live deck. This is most useful after someone studies the top cards or when you want to bury danger deeper.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/project-manager.webp');"></div>
+                  <div>
+                    <strong>Project Manager</strong>
+                    <p>Choose a player and steal a random card from their hand, then still draw to end your turn.</p>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="guide-section">
+              <div class="guide-section-head">
+                <h3>Desk Loot</h3>
+                <p>These cards do nothing by themselves, but they power the combo system.</p>
+              </div>
+              <div class="guide-card-grid">
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/rubber-duck.webp');"></div>
+                  <div>
+                    <strong>Rubber Duck</strong>
+                    <p>No direct power on its own. Use Desk Loot cards for combo plays.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/coffee-break.webp');"></div>
+                  <div>
+                    <strong>Coffee Break</strong>
+                    <p>No direct power on its own. Use Desk Loot cards for combo plays.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/sticky-note.webp');"></div>
+                  <div>
+                    <strong>Sticky Note</strong>
+                    <p>No direct power on its own. Use Desk Loot cards for combo plays.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/mechanical-keyboard.webp');"></div>
+                  <div>
+                    <strong>Mechanical Keyboard</strong>
+                    <p>No direct power on its own. Use Desk Loot cards for combo plays.</p>
+                  </div>
+                </article>
+                <article class="guide-card-entry">
+                  <div class="guide-card-thumb" style="background-image: url('assets/cards/posh-training.webp');"></div>
+                  <div>
+                    <strong>Posh Training</strong>
+                    <p>No direct power on its own. Use Desk Loot cards for combo plays.</p>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="guide-section">
+              <div class="guide-section-head">
+                <h3>Round Rules</h3>
+              </div>
+              <ul class="rules-list guide-rules-list">
+                <li>Everyone starts with <code>1</code> <code>Blame The Intern</code> and <code>5</code> extra cards.</li>
+                <li>For <code>n</code> active players, the round targets <code>2n</code> <code>Production Crash</code> cards and <code>2n-1</code> total <code>Blame The Intern</code> cards.</li>
+                <li>Your turn usually works like this: play <code>1</code> action or combo if you want, then draw to end the turn.</li>
+                <li><code>Skip</code> is the only effect that removes the end-of-turn draw.</li>
+                <li><code>Sprint Planning</code> makes the next player resolve <code>3</code> draws total on a normal turn.</li>
+                <li><code>2</code> matching cards steal a random card, <code>3</code> matching cards request a specific card, and <code>5</code> different cards reclaim <code>1</code> card from discard.</li>
+                <li>Any non-<code>Production Crash</code> card, including <code>Nope</code> and <code>Blame The Intern</code>, can be used in combos.</li>
+                <li>If the deck has no <code>Production Crash</code> left while multiple players are still alive, the discard pile is shuffled back into the deck immediately.</li>
+                <li><code>Watch Room</code> lets you spectate with a room code without taking an active player seat.</li>
+                <li>The last player still alive wins the match.</li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <footer class="site-footer">
-      <p>&copy; 2026 Exploding Productions. All rights reserved.</p>
+      <p>&copy; 2026 Crashing Productions. All rights reserved.</p>
       <p>Developed by Dev A.</p>
     </footer>
 

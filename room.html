@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Exploding Productions Room</title>
+    <title>Crashing Productions Room</title>
     <link rel="stylesheet" href="styles.css?v=__ASSET_VERSION__" />
   </head>
   <body>
@@ -11,16 +11,13 @@
     <main class="shell">
       <section class="hero room-hero panel" id="room-hero">
         <div class="hero-brand">
-          <div class="game-logo" aria-label="Exploding Productions">
+          <div class="game-logo" aria-label="Crashing Productions">
             <span class="game-logo-kicker">release panic protocol</span>
             <h1 class="game-logo-wordmark">
-              <span class="game-logo-main">Exploding</span>
+              <span class="game-logo-main">Crashing</span>
               <span class="game-logo-sub">Productions</span>
             </h1>
           </div>
-          <p class="hero-copy">
-            Live room play, reconnect-aware turns, combo steals, and room reuse after each round.
-          </p>
         </div>
         <div class="hero-status">
           <div class="status-pill" id="connection-pill">Connecting</div>
@@ -33,7 +30,7 @@
           <div class="panel-head">
             <div>
               <p class="eyebrow">Room access</p>
-              <h2>Join This Room</h2>
+              <h2>Room Access</h2>
             </div>
           </div>
 
@@ -48,51 +45,31 @@
               <input id="room-input" type="text" maxlength="6" placeholder="ABCD" readonly />
             </label>
 
-            <div class="action-row wrap room-access-actions">
+            <div id="room-copy-row" class="action-row room-copy-row">
+              <button id="copy-room-btn" class="secondary-btn">Copy Code</button>
+            </div>
+
+            <div id="room-entry-actions" class="action-row wrap room-access-actions">
               <button id="join-room-btn" class="secondary-btn">Join Room</button>
+              <button id="watch-room-btn" class="secondary-btn">Watch Room</button>
+            </div>
+
+            <div id="room-member-actions" class="action-row wrap room-member-actions">
+              <button id="start-game-btn" class="primary-btn">Start Match</button>
               <button id="leave-room-btn" class="danger-btn">Leave Room</button>
             </div>
 
             <p id="setup-status" class="setup-status" aria-live="polite">
-              Load a room code from the URL to join this room.
+              Load a room code from the URL to join or watch this room.
             </p>
           </div>
 
           <p id="setup-compact-note" class="setup-compact-note" hidden>
           </p>
         </article>
-
-        <article class="panel room-card compact-room-card" id="room-card">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Current room</p>
-              <h2 id="room-title">No Room Yet</h2>
-            </div>
-          </div>
-
-          <div class="room-meta">
-            <div class="meta-block">
-              <span class="meta-label">Room code</span>
-              <strong id="room-code-display">----</strong>
-            </div>
-            <div class="meta-block">
-              <span class="meta-label">Phase</span>
-              <strong id="phase-display">Lobby</strong>
-            </div>
-          </div>
-
-          <div class="action-row wrap">
-            <button id="start-game-btn" class="primary-btn">Start Match</button>
-            <button id="copy-room-btn" class="secondary-btn">Copy Code</button>
-          </div>
-
-          <p id="notice-banner" class="notice-banner">
-            Join the room to begin.
-          </p>
-        </article>
       </section>
 
-      <section class="dashboard-grid">
+      <section class="dashboard-grid" id="dashboard-grid" hidden>
         <div class="center-stage">
           <div class="play-row" id="play-row">
             <article class="panel players-card" id="players-card" hidden>
@@ -131,8 +108,8 @@
               <article class="panel deck-card">
                 <div class="stack-card deck-stack compact-deck-stack">
                   <span class="stack-label">Deck</span>
+                  <div id="deck-preview" class="mini-stack-preview" aria-hidden="true"></div>
                   <strong id="deck-count">0 cards</strong>
-                  <p>Production Crashes and playable chaos.</p>
                 </div>
                 <button
                   id="discard-pile-btn"
@@ -142,11 +119,11 @@
                   aria-expanded="false"
                   disabled
                 >
-                  <span class="stack-label">Discard pile</span>
+                  <span class="stack-label">Discard</span>
+                  <div id="discard-preview" class="mini-stack-preview discard-preview" aria-hidden="true"></div>
                   <strong id="discard-name">0 cards</strong>
-                  <span class="discard-launch-copy">Open when needed</span>
                 </button>
-                <p id="discard-hint" class="discard-hint">Reveal used cards in a popup when needed.</p>
+                <p id="discard-hint" class="discard-hint" hidden></p>
               </article>
 
               <article class="panel log-card">
@@ -210,20 +187,17 @@
       <div class="discard-browser-panel">
         <div class="panel-head review-head">
           <div>
-            <p class="eyebrow">Discard pile</p>
-            <h2>Discard Pile</h2>
+            <h2>Used Cards</h2>
           </div>
           <button id="discard-browser-close-btn" class="ghost-btn" type="button">Close</button>
         </div>
-        <p id="discard-browser-message" class="review-message">
-          Review the recently used cards here.
-        </p>
+        <p id="discard-browser-message" class="review-message" hidden></p>
         <div id="discard-browser-grid" class="discard-browser-grid"></div>
       </div>
     </div>
 
     <footer class="site-footer">
-      <p>&copy; 2026 Exploding Productions. All rights reserved.</p>
+      <p>&copy; 2026 Crashing Productions. All rights reserved.</p>
       <p>Developed by Dev A.</p>
     </footer>
 

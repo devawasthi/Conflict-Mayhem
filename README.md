@@ -1,6 +1,6 @@
-# Exploding Productions
+# Crashing Productions
 
-Exploding Productions is an original multiplayer browser card game with room codes, real-time WebSocket updates, `Nope` reactions, `Peer Review`, `Skip`, `Shuffle`, `Sprint Planning`, and combo rules for `2` matching cards, `3` matching cards, and `5` different cards.
+Crashing Productions is an original multiplayer browser card game with room codes, real-time WebSocket updates, `Nope` reactions, `Peer Review`, `Skip`, `Shuffle`, `Sprint Planning`, spectator mode, and combo rules for `2` matching cards, `3` matching cards, and `5` different cards.
 
 Each room supports up to `6` players.
 
@@ -21,12 +21,12 @@ Open that URL in two browser tabs or two different browsers to test multiplayer.
 
 - Every player starts with `1` `Blame The Intern` and `5` random cards.
 - On your turn, you can either draw immediately or play one action/combo first.
-- After most played actions and combos, the game automatically draws the end-of-turn card for you.
+- After most played actions and combos, you still need to draw to end your turn.
 - If you draw a `Production Crash` without `Blame The Intern`, you are eliminated.
 - If you draw a `Production Crash` with `Blame The Intern`, both cards are discarded.
 - `Nope` is a reaction card that cancels the latest action or combo unless another `Nope` flips it back.
 - `Skip` ends your turn immediately without the normal draw.
-- `Sprint Planning` adds one extra required draw to the next player, and you still draw to end your turn.
+- `Sprint Planning` adds `2` extra required draws to the next player, and you still draw to end your turn.
 - `Peer Review` shows you the next three cards privately.
 - `Shuffle` shuffles the deck.
 - `Project Manager` steals a random card from a chosen opponent.
@@ -34,6 +34,7 @@ Open that URL in two browser tabs or two different browsers to test multiplayer.
 - `3` matching cards lets you request a specific card from a chosen opponent.
 - `5` different cards lets you reclaim one card from the discard pile.
 - Any non-`Production Crash` card, including `Nope` and `Blame The Intern`, can be used in those combos.
+- `Watch Room` lets you spectate a room by code without taking an active player seat.
 
 ## Deploy
 
@@ -59,11 +60,11 @@ Health check endpoint:
 Build:
 
 ```bash
-docker build -t merge-conflict-mayhem .
+docker build -t crashing-productions .
 ```
 
 Run:
 
 ```bash
-docker run --rm -p 8765:8765 merge-conflict-mayhem
+docker run --rm -p 8765:8765 crashing-productions
 ```

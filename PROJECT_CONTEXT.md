@@ -4,7 +4,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 
 ## Product
 
-- Name: `Exploding Productions`
+- Name: `Crashing Productions`
 - Type: browser-based multiplayer card game
 - Theme: comedic tech / coding chaos
 - Transport: custom Python WebSocket server with static file hosting
@@ -22,14 +22,14 @@ This file is the quick-reference notes file for the project. Update it whenever 
 ## Core Game Rules
 
 - Each player starts with `1` `Blame The Intern` and `5` random cards.
-- The game keeps total `Blame The Intern` availability tied to the round player count, while each player still starts with `1` guaranteed copy in hand.
+- Each live round targets `2 * alive players` `Production Crash` cards and `2 * alive players - 1` total `Blame The Intern` cards, while each active player still starts with `1` guaranteed copy in hand.
 - The draw pile now uses the full normal deck size after setup instead of the temporary `10`-card test cap.
 - A turn normally ends with a draw.
 - `Skip` is the only action card that skips the turn-ending draw.
 - `Sprint Planning` gives the next player `+2` required draws, but the acting player still draws to end their own turn.
 - `Nope` cancels the latest action or combo unless another `Nope` flips it back.
 - Drawing `Production Crash` without `Blame The Intern` eliminates the player.
-- Drawing `Production Crash` with `Blame The Intern` discards the mitt, and the server can re-queue the crash if the deck would otherwise go crash-free.
+- Drawing `Production Crash` with `Blame The Intern` discards the mitt, and if the deck would otherwise go crash-free the discard pile is folded back into the deck and reshuffled immediately.
 - Production Crash pressure scales with the number of alive players, and the deck should never stay at `0` Production Crashes while more than one player is still alive.
 - If the draw deck runs out and there are used cards in the discard pile, the discard pile is shuffled back into the deck instead of immediately ending the round.
 - If both the draw deck and discard pile run dry before one player remains, the server creates a short sudden-death deck instead of awarding an arbitrary winner.
@@ -65,7 +65,9 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Refreshing in the same browser should rejoin the same room seat automatically.
 - Explicit `Leave` clears the stored reconnect token for that room.
 - Room creation and general code entry now happen on the lobby page, while active gameplay lives on the dedicated room page.
+- The lobby and room page both expose a room-code-based `Watch Room` path for spectating without joining the active player list.
 - During a live match, the room access controls collapse and the `Current Room` panel is hidden so gameplay stays in focus.
+- Spectators now stay spectators across restarts instead of being auto-promoted into the next round.
 
 ## Server Notes
 
@@ -87,9 +89,10 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - `Peer Review` now opens a private reveal panel showing the next three cards.
 - The live room now uses a simplified three-panel play row: `Engineering Team` on the left, `Toolbox Cards` in the center, and the `Incident Log` on the right.
 - The old board-state panel has been removed from the live room. `Deck & Discard` now live in their own right-rail panel above the `Incident Log`, and the discard pile is opened as a popup only when needed.
-- Before the host starts the match, `Engineering Team`, `Deck & Discard`, and `Incident Log` stay hidden so the room screen remains focused on joining and the hand area.
-- Before the host starts the match, `Current Room` stays on the same top row as `Room access`, while the live-play side panels remain hidden.
-- Those live-play side panels are also marked `hidden` in the initial room HTML so they do not flash briefly before the room script applies state.
+- Before the host starts the match, the gameplay board stays hidden so the room screen remains focused on the room-access controls only.
+- Before the host starts the match, the room page now collapses into a single `Room Access` card with the room code, `Copy Code`, and member controls, while the live-play panels stay out of view.
+- The `Join Room` and `Watch Room` controls are only for code-entry access. Once you are already inside the room, those entry controls are hidden.
+- Those live-play panels are also marked hidden in the initial room HTML and explicitly forced off until the match begins so they do not flash or peek through pre-start.
 - The room hero now keeps the same title treatment before and after the match starts, while the separate room-access card is still hidden during live play.
 - The compact live-room hero is intentionally very slim so it behaves like a top utility bar instead of a landing-page banner.
 - The live-room header now uses a centered stylized wordmark without a boxed title container, and the in-room `Leave Room` action sits next to the connection badge.
@@ -108,6 +111,8 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - The incident log now allows a taller visible area and wraps its header controls so titles and buttons do not clip on narrower layouts.
 - The discard pile is no longer shown inline on the board; it opens in the discard-browser popup for both browsing and reclaim interactions.
 - The deck/discard card keeps the discard helper copy aligned to the card width so empty-state messaging does not drift outside the panel.
+- The gameplay guide popup must remain scrollable when its card list exceeds the viewport height.
+- The gameplay guide should explain setup, live card counts, turn flow, combo flow, and spectator behavior in clear game-specific language.
 - Hand tiles are art-first and do not repeat the card name/description below the artwork.
 - Hand cards now reveal the tag, name, and card text on hover/focus so the art-first layout still keeps rules readable.
 - Duplicate hand cards now render as a slight stacked fan, and hovering them pushes the extra copy outward so pairs are easier to read at a glance.
@@ -130,7 +135,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 
 ## Recent Changes
 
-- Renamed the app branding to `Exploding Productions`.
+- Renamed the app branding to `Crashing Productions`.
 - Added illustrated card art for themed cards.
 - Added URL-based room persistence and same-browser reconnect support.
 - Compact the room join/create panel after a live match starts.
@@ -146,3 +151,12 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Allowed turn-playable action cards to be used in pair/trio/five combos through a confirm-to-play hand flow.
 - Rebalanced recycled decks so Production Crash and Blame The Intern counts normalize when the draw pile is rebuilt.
 - Hardened room recovery after refresh/network blips by auto-retrying same-session reconnects and ignoring stale socket disconnects after a session is reclaimed.
+- Simplified the lobby left panel to just player name, create room, room code, and join room, while keeping the quick rules in the right-side card.
+- Added a lobby `Play` button that joins a random open pre-start room, a richer `How To Play` popup with card visuals, and clearer quick rules on the landing page.
+- Tightened the lobby copy so the main access card uses short button notes instead of redundant headings, and normalized the button sizing for a cleaner desktop layout.
+- Leaving from the room page now returns straight to the home page, random `Play` falls back to creating a room when none are open, spectators can join specific rooms by code, and deck/discard use layered placeholder card backs.
+- The lobby now has an explicit room-code `Watch Room` action, while the rule-book popup uses actual card art, combo summaries, and animated guide visuals instead of placeholder text.
+- The pre-match room control card has been reduced to just `Start Match` and `Copy Code`, the deck/discard content is centered, and redundant discard-copy text has been removed from both the room rail and the discard popup.
+- Incident-log entries now highlight player names in a separate accent color for faster scanability.
+- Spectator mode now works by room code, the pre-match room view only keeps the top access controls visible, and the guide popup is explicitly scrollable.
+- All `Desk Loot` cards now share the same no-power combo-only description everywhere in the UI.

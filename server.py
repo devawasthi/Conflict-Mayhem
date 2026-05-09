@@ -119,7 +119,7 @@ CARD_CATALOG = {
     "cookie": {
         "name": "Rubber Duck",
         "tag": "Desk Loot",
-        "description": "Match tech loot cards to unlock combo plays.",
+        "description": "No direct power on its own. Use Desk Loot cards for combo plays.",
         "themeClass": "theme-cookie",
         "group": "snack",
         "turnPlayable": False,
@@ -128,7 +128,7 @@ CARD_CATALOG = {
     "donut": {
         "name": "Coffee Break",
         "tag": "Desk Loot",
-        "description": "Pairs, trios, and five different cards unlock combo actions.",
+        "description": "No direct power on its own. Use Desk Loot cards for combo plays.",
         "themeClass": "theme-donut",
         "group": "snack",
         "turnPlayable": False,
@@ -137,7 +137,7 @@ CARD_CATALOG = {
     "pretzel": {
         "name": "Sticky Note",
         "tag": "Desk Loot",
-        "description": "Collect matching tools to trigger stronger combo effects.",
+        "description": "No direct power on its own. Use Desk Loot cards for combo plays.",
         "themeClass": "theme-pretzel",
         "group": "snack",
         "turnPlayable": False,
@@ -146,7 +146,7 @@ CARD_CATALOG = {
     "popcorn": {
         "name": "Mechanical Keyboard",
         "tag": "Desk Loot",
-        "description": "Single tool cards are harmless alone but powerful in combos.",
+        "description": "No direct power on its own. Use Desk Loot cards for combo plays.",
         "themeClass": "theme-popcorn",
         "group": "snack",
         "turnPlayable": False,
@@ -155,7 +155,7 @@ CARD_CATALOG = {
     "candy": {
         "name": "Posh Training",
         "tag": "Desk Loot",
-        "description": "Five different cards can reclaim a card from the discard pile.",
+        "description": "No direct power on its own. Use Desk Loot cards for combo plays.",
         "themeClass": "theme-candy",
         "group": "snack",
         "turnPlayable": False,
@@ -224,6 +224,7 @@ class Player:
     hand: list[str] = field(default_factory=list)
     alive: bool = True
     connected: bool = True
+    spectator: bool = False
     required_draws: int = 1
 
     @property
@@ -356,6 +357,9 @@ class GameRoom:
     def connected_players(self) -> list[Player]:
         return [player for player in self.players if player.connected]
 
+    def connected_participants(self) -> list[Player]:
+        return [player for player in self.players if player.connected and not player.spectator]
+
     def alive_players(self) -> list[Player]:
         return [player for player in self.players if player.alive]
 
@@ -403,7 +407,7 @@ class GameRoom:
         return result
 
     def ensure_host(self) -> None:
-        connected = self.connected_players()
+        connected = self.connected_participants() or self.connected_players()
         self.host_id = connected[0].id if connected else None
 
     def attach_player_connection(self, player: Player, connection: WebSocketConnection) -> None:
@@ -428,19 +432,29 @@ class GameRoom:
             return False
 
     def add_player(
-        self, connection: WebSocketConnection, name: str, session_token: Optional[str] = None
+        self,
+        connection: WebSocketConnection,
+        name: str,
+        session_token: Optional[str] = None,
+        spectator: bool = False,
     ) -> Player:
         player = Player(
             id=uuid.uuid4().hex[:8],
             session_token=session_token or uuid.uuid4().hex,
             name=name,
             connection=None,
+            alive=not spectator,
+            spectator=spectator,
         )
         self.players.append(player)
         if not self.host_id:
             self.host_id = player.id
         self.attach_player_connection(player, connection)
-        self.add_log(f"{player.name} joined room {self.code}.")
+        self.ensure_host()
+        if spectator:
+            self.add_log(f"{player.name} joined room {self.code} as a spectator.")
+        else:
+            self.add_log(f"{player.name} joined room {self.code}.")
         return player
 
     def reconnect_player(
@@ -456,8 +470,7 @@ class GameRoom:
 
         player.name = name or player.name
         self.attach_player_connection(player, connection)
-        if not self.host_id:
-            self.host_id = player.id
+        self.ensure_host()
         self.add_log(f"{player.name} rejoined room {self.code}.")
         return player
 
@@ -501,10 +514,10 @@ class GameRoom:
     def live_player_count(self) -> int:
         if self.started:
             return len(self.alive_players())
-        return self.match_player_count or len(self.connected_players())
+        return self.round_player_count()
 
     def round_player_count(self) -> int:
-        return self.match_player_count or len(self.connected_players())
+        return self.match_player_count or len(self.connected_participants())
 
     def live_oven_mitts_in_hands(self) -> int:
         return sum(player.hand.count("ovenMitt") for player in self.players if player.alive)
@@ -513,13 +526,13 @@ class GameRoom:
         count = self.live_player_count() if player_count is None else player_count
         if count <= 1:
             return 0
-        return count
+        return count * 2
 
     def target_oven_mitt_total(self, player_count: Optional[int] = None) -> int:
-        count = self.round_player_count() if player_count is None else player_count
+        count = self.live_player_count() if player_count is None else player_count
         if count <= 0:
             return 0
-        return count
+        return max(1, (2 * count) - 1)
 
     def target_oven_mitt_count_in_deck(self, player_count: Optional[int] = None) -> int:
         total_target = self.target_oven_mitt_total(player_count)
@@ -555,31 +568,39 @@ class GameRoom:
 
     def start_game(self) -> None:
         self.players = [player for player in self.players if player.connected]
-        if len(self.players) < 2:
+        participants = [player for player in self.players if not player.spectator]
+        spectators = [player for player in self.players if player.spectator]
+        if len(participants) < 2:
             raise ValueError("At least two players are required to start.")
 
-        self.match_player_count = len(self.players)
+        self.players = participants + spectators
+        self.match_player_count = len(participants)
         self.started = True
         self.winner_id = None
         self.pending_reinsert_player_id = None
         self.pending_effect = None
         self.discard = []
         self.log_entries = []
-        self.deck = self.build_deck(len(self.players))
+        self.deck = self.build_deck(len(participants))
 
-        for player in self.players:
+        for player in participants:
             player.alive = True
             player.required_draws = 1
             player.hand = ["ovenMitt"]
 
+        for player in spectators:
+            player.alive = False
+            player.required_draws = 0
+            player.hand = []
+
         for _ in range(5):
-            for player in self.players:
+            for player in participants:
                 player.hand.append(self.deck.pop())
 
         self.deck = self.normalize_deck(self.deck)
 
-        self.current_player_id = random.choice(self.players).id
-        self.add_log("A new Exploding Productions match began.")
+        self.current_player_id = random.choice(participants).id
+        self.add_log("A new Crashing Productions match began.")
 
     def leave_player(self, player_id: str) -> bool:
         player = self.get_player(player_id)
@@ -597,7 +618,9 @@ class GameRoom:
 
         self.cleanup_pending_for_departure(player.id)
 
-        if player.alive:
+        if player.spectator:
+            self.add_log(f"{player.name} stopped spectating and left the room.")
+        elif player.alive:
             self.eliminate_player(player, reason="leave")
         else:
             self.add_log(f"{player.name} left the room.")
@@ -622,7 +645,9 @@ class GameRoom:
             self.ensure_host()
             return False
 
-        if player.alive:
+        if player.spectator:
+            self.add_log(f"{player.name} disconnected while spectating.")
+        elif player.alive:
             self.add_log(f"{player.name} disconnected and has {DISCONNECT_GRACE_SECONDS} seconds to return.")
         else:
             self.add_log(f"{player.name} disconnected after being eliminated.")
@@ -761,8 +786,9 @@ class GameRoom:
         if not self.discard:
             return False
 
-        self.deck = self.normalize_deck(self.discard)
+        deck_source = [*self.deck, *self.discard]
         self.discard.clear()
+        self.deck = self.normalize_deck(deck_source)
         return bool(self.deck)
 
     def build_sudden_death_deck(self) -> bool:
@@ -773,14 +799,15 @@ class GameRoom:
         self.deck = self.normalize_deck([])
         return bool(self.deck)
 
-    def ensure_hot_potato_in_deck(self) -> bool:
+    def restore_hot_potato_pressure(self) -> bool:
         if len(self.alive_players()) <= 1:
             return False
         if "hotPotato" in self.deck:
             return False
 
-        insert_at = random.randint(0, len(self.deck))
-        self.deck.insert(insert_at, "hotPotato")
+        deck_source = [*self.deck, *self.discard]
+        self.discard.clear()
+        self.deck = self.normalize_deck(deck_source)
         return True
 
     def start_effect(self, effect: dict) -> list[tuple[WebSocketConnection, dict]]:
@@ -1002,8 +1029,8 @@ class GameRoom:
             if "ovenMitt" not in player.hand:
                 self.discard.append("hotPotato")
                 self.eliminate_player(player, reason="hotPotato")
-                if self.ensure_hot_potato_in_deck():
-                    self.add_log("A Production Crash was pushed back into the release queue to keep the pressure on.")
+                if self.restore_hot_potato_pressure():
+                    self.add_log("The discard pile was shuffled back into the deck to keep a Production Crash live.")
                 return messages
 
             player.hand.remove("ovenMitt")
@@ -1011,9 +1038,9 @@ class GameRoom:
             self.discard.append("ovenMitt")
             player.required_draws = max(0, player.required_draws - 1)
             self.add_log(f"{player.name} neutralized a Production Crash by blaming the intern.")
-            crash_requeued = self.ensure_hot_potato_in_deck()
+            crash_requeued = self.restore_hot_potato_pressure()
             if crash_requeued:
-                self.add_log("The neutralized Production Crash was quietly re-queued so the panic never fully disappears.")
+                self.add_log("The discard pile was shuffled back into the deck to keep a Production Crash live.")
             messages.append(
                 (
                     player.connection,
@@ -1022,7 +1049,7 @@ class GameRoom:
                         "message": (
                             "You neutralized a Production Crash. "
                             + (
-                                "Blame The Intern was discarded and the crash was re-queued."
+                                "Blame The Intern was discarded and the deck was reshuffled to keep a crash live."
                                 if crash_requeued
                                 else "Both the crash and Blame The Intern were discarded."
                             )
@@ -1321,6 +1348,10 @@ class GameRoom:
                 prompt_text = f"{effect['label']} is resolving."
         elif self.winner_id:
             prompt_text = "The round is over. The host can start another match."
+        elif viewer.spectator and self.started:
+            prompt_text = "You are spectating this round."
+        elif viewer.spectator:
+            prompt_text = "You are spectating this room."
         elif can_play:
             if viewer.required_draws > 1:
                 prompt_text = (
@@ -1329,6 +1360,8 @@ class GameRoom:
                 )
             else:
                 prompt_text = "Play one action or combo, or draw immediately to end your turn."
+        elif self.started and not viewer.alive:
+            prompt_text = "You are out for this round, but you can keep watching until the next match."
         elif self.started:
             if current_player and not current_player.connected:
                 prompt_text = (
@@ -1347,10 +1380,12 @@ class GameRoom:
             "started": self.started,
             "winnerId": self.winner_id,
             "playerToken": viewer.session_token,
+            "viewerIsSpectator": viewer.spectator,
+            "viewerIsEliminated": self.started and not viewer.alive and not viewer.spectator,
             "phaseLabel": phase_label,
             "turnLabel": turn_label,
             "promptText": prompt_text,
-            "canStart": viewer.id == self.host_id and len(self.connected_players()) >= 2 and (not self.started or bool(self.winner_id)),
+            "canStart": viewer.id == self.host_id and not viewer.spectator and len(self.connected_participants()) >= 2 and (not self.started or bool(self.winner_id)),
             "canDraw": can_draw,
             "canPlay": can_play,
             "deckCount": len(self.deck),
@@ -1366,6 +1401,8 @@ class GameRoom:
                     "handCount": len(player.hand),
                     "requiredDraws": player.required_draws,
                     "alive": player.alive,
+                    "isSpectator": player.spectator,
+                    "isWatching": self.started and (player.spectator or not player.alive),
                     "isHost": player.id == self.host_id,
                     "isCurrentTurn": player.id == self.current_player_id and self.started and not self.winner_id,
                     "isYou": player.id == viewer.id,
@@ -1483,6 +1520,17 @@ class RoomManager:
             try:
                 if action == "create_room":
                     self.create_room(connection, message.get("name", ""))
+                elif action == "join_random_room":
+                    self.join_random_room(connection, message.get("name", ""))
+                elif action == "spectate_room":
+                    self.spectate_room(
+                        connection,
+                        message.get("name", ""),
+                        message.get("roomCode", ""),
+                        message.get("playerToken", ""),
+                    )
+                elif action == "watch_random_room":
+                    self.watch_random_room(connection, message.get("name", ""))
                 elif action == "join_room":
                     self.join_room(
                         connection,
@@ -1528,6 +1576,74 @@ class RoomManager:
         self.send_info(connection, f"Room {code} created. Share the code so someone can join.")
         room.broadcast_state()
 
+    def join_random_room(self, connection: WebSocketConnection, name: str) -> None:
+        if connection.room_code:
+            raise ValueError("Leave your current room before joining a new one.")
+
+        clean_name = sanitize_name(name)
+        eligible_rooms = [
+            room
+            for room in self.rooms.values()
+            if not room.started
+            and not room.winner_id
+            and 0 < len(room.connected_participants()) < MAX_ROOM_SIZE
+        ]
+
+        if not eligible_rooms:
+            self.create_room(connection, clean_name)
+            return
+
+        room = random.choice(eligible_rooms)
+        room.add_player(connection, clean_name)
+        self.send_info(connection, f"Joined open room {room.code}.")
+        room.broadcast_state()
+
+    def watch_random_room(self, connection: WebSocketConnection, name: str) -> None:
+        if connection.room_code:
+            raise ValueError("Leave your current room before joining a new one.")
+
+        clean_name = sanitize_name(name)
+        eligible_rooms = [
+            room
+            for room in self.rooms.values()
+            if room.started
+            and not room.winner_id
+            and len(room.connected_participants()) <= MAX_ROOM_SIZE
+        ]
+
+        if not eligible_rooms:
+            raise ValueError("No live room is available to watch right now.")
+
+        room = random.choice(eligible_rooms)
+        room.add_player(connection, clean_name, spectator=True)
+        self.send_info(connection, f"Watching room {room.code}.")
+        room.broadcast_state()
+
+    def spectate_room(
+        self, connection: WebSocketConnection, name: str, room_code: str, player_token: str
+    ) -> None:
+        if connection.room_code:
+            raise ValueError("Leave your current room before joining a new one.")
+
+        code = sanitize_room_code(room_code)
+        reconnect_token = sanitize_session_token(player_token)
+        clean_name = sanitize_name(name)
+        room = self.rooms.get(code)
+        if not room:
+            raise ValueError("That room code was not found.")
+
+        if reconnect_token:
+            player = room.reconnect_player(connection, clean_name, reconnect_token)
+            if player:
+                self.cancel_disconnect_timeout(code, player.id)
+                self.send_info(connection, f"Rejoined room {code}.")
+                room.broadcast_state()
+                return
+
+        room.add_player(connection, clean_name, spectator=True)
+        self.send_info(connection, f"Watching room {code}.")
+        room.broadcast_state()
+
     def join_room(
         self, connection: WebSocketConnection, name: str, room_code: str, player_token: str
     ) -> None:
@@ -1549,10 +1665,14 @@ class RoomManager:
                 room.broadcast_state()
                 return
 
-        if room.started and not room.winner_id:
-            raise ValueError("That room is already in the middle of a match.")
-        if len(room.connected_players()) >= MAX_ROOM_SIZE:
+        if len(room.connected_participants()) >= MAX_ROOM_SIZE:
             raise ValueError("That room is full.")
+
+        if room.started and not room.winner_id:
+            room.add_player(connection, clean_name, spectator=True)
+            self.send_info(connection, f"Watching room {code}.")
+            room.broadcast_state()
+            return
 
         room.add_player(connection, clean_name)
         self.send_info(connection, f"Joined room {code}.")
@@ -1762,11 +1882,11 @@ class GameRequestHandler(SimpleHTTPRequestHandler):
 def run() -> None:
     handler = partial(GameRequestHandler, directory=str(BASE_DIR))
     server = ThreadingHTTPServer((HOST, PORT), handler)
-    print(f"Exploding Productions running on http://{HOST}:{PORT}")
+    print(f"Crashing Productions running on http://{HOST}:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down Exploding Productions.")
+        print("\nShutting down Crashing Productions.")
     finally:
         server.server_close()
 
