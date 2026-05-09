@@ -21,6 +21,7 @@
         </div>
         <div class="hero-status">
           <div class="status-pill" id="connection-pill">Connecting</div>
+          <div id="room-code-pill" class="status-pill room-code-pill" hidden></div>
           <button id="leave-room-live-btn" class="danger-btn hero-leave-btn" type="button" hidden>Leave Room</button>
         </div>
       </section>
@@ -62,6 +63,14 @@
             <p id="setup-status" class="setup-status" aria-live="polite">
               Load a room code from the URL to join or watch this room.
             </p>
+
+            <section id="lobby-roster" class="lobby-roster" hidden>
+              <div class="lobby-roster-head">
+                <strong>Players Waiting In Lobby</strong>
+                <span id="lobby-roster-summary" class="lobby-roster-summary"></span>
+              </div>
+              <div id="lobby-roster-list" class="players-list lobby-roster-list"></div>
+            </section>
           </div>
 
           <p id="setup-compact-note" class="setup-compact-note" hidden>

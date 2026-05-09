@@ -30,13 +30,12 @@ const CARD_VISUALS = {
   nope: { symbol: "NO", label: "Nope" },
   peek: { symbol: "PR", label: "Peer Review" },
   skip: { symbol: "SK", label: "Skip" },
-  attack: { symbol: "SP", label: "Sprint Planning" },
+  attack: { symbol: "NA", label: "Nerd Attack" },
   mixUp: { symbol: "SH", label: "Shuffle" },
   swipe: { symbol: "PM", label: "Project Manager" },
   cookie: { symbol: "RD", label: "Rubber Duck" },
   donut: { symbol: "CB", label: "Coffee Break" },
   pretzel: { symbol: "SN", label: "Sticky Note" },
-  popcorn: { symbol: "KB", label: "Mechanical Keyboard" },
   candy: { symbol: "PT", label: "Posh Training" },
 };
 
@@ -46,23 +45,18 @@ const CARD_ART = {
   nope: "assets/cards/nope.webp",
   peek: "assets/cards/peer-review.webp",
   skip: "assets/cards/skip.webp",
-  attack: "assets/cards/sprint-planning.webp",
+  attack: "assets/cards/nerd-attack.webp",
   mixUp: "assets/cards/shuffle.webp",
   swipe: "assets/cards/project-manager.webp",
   cookie: "assets/cards/rubber-duck.webp",
   donut: "assets/cards/coffee-break.webp",
   pretzel: "assets/cards/sticky-note.webp",
-  popcorn: "assets/cards/mechanical-keyboard.webp",
   candy: "assets/cards/posh-training.webp",
 };
 
 const CARD_ART_TREATMENTS = {
   cookie: {
     positionX: "41%",
-    scale: 1,
-  },
-  popcorn: {
-    positionX: "59%",
     scale: 1,
   },
 };
@@ -75,7 +69,7 @@ const ACTION_MOMENT_COPY = {
   nope: "A risky move just got shut down.",
   peek: "The next three cards are being inspected.",
   skip: "The draw step was intentionally skipped.",
-  attack: "Extra pressure just got passed to the next player.",
+  attack: "A Nerd Attack just dumped extra draw pressure on the next player.",
   mixUp: "The deck order is getting scrambled.",
   swipe: "A random card is being yanked from another hand.",
 };

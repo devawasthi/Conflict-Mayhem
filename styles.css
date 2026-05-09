@@ -255,6 +255,12 @@ h1 {
   transform: translateY(-50%);
 }
 
+.room-code-pill {
+  background: rgba(111, 224, 255, 0.12);
+  color: #dffbff;
+  border-color: rgba(111, 224, 255, 0.22);
+}
+
 .setup-grid,
 .lobby-grid,
 .board-grid,
@@ -754,8 +760,42 @@ h1 {
   margin-top: 12px;
 }
 
+.room-copy-row {
+  justify-content: flex-start;
+}
+
 .room-copy-row .secondary-btn {
-  width: 100%;
+  width: auto;
+  min-width: 144px;
+}
+
+.lobby-roster {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.lobby-roster-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.lobby-roster-head strong {
+  color: #f4fcff;
+  font-size: 0.96rem;
+}
+
+.lobby-roster-summary {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lobby-roster-list {
+  max-height: 13rem;
 }
 
 .setup-compact-note {
@@ -1069,6 +1109,11 @@ button:disabled {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.68rem;
+}
+
+.hand-summary-copy.is-status {
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
 }
 
 .hand-meter {
@@ -1485,6 +1530,15 @@ button:disabled {
   text-align: right;
 }
 
+.action-deadline-inline {
+  margin: 0;
+  color: #9ce9ff;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: right;
+}
+
 .combo-actions {
   margin-top: 12px;
 }
@@ -1513,6 +1567,47 @@ button:disabled {
 .combo-summary strong {
   font-size: 1rem;
   color: #f7fcfd;
+}
+
+.match-result-banner {
+  display: grid;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 212, 106, 0.26);
+  background:
+    linear-gradient(135deg, rgba(255, 212, 106, 0.18), rgba(255, 255, 255, 0.03) 54%, rgba(10, 30, 39, 0.82)),
+    rgba(10, 30, 39, 0.9);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
+}
+
+.match-result-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.match-result-kicker {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #ffd36e;
+}
+
+.match-result-copy strong {
+  font-size: 1.14rem;
+  color: #fff7dd;
+}
+
+.match-result-copy p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.match-result-actions {
+  margin-top: 2px;
 }
 
 .hand-grid {
@@ -1963,12 +2058,6 @@ button:disabled {
 .theme-pretzel {
   background:
     linear-gradient(180deg, rgba(121, 246, 165, 0.22), rgba(10, 30, 39, 0.14)),
-    rgba(11, 29, 37, 0.94);
-}
-
-.theme-popcorn {
-  background:
-    linear-gradient(180deg, rgba(176, 198, 210, 0.26), rgba(10, 30, 39, 0.14)),
     rgba(11, 29, 37, 0.94);
 }
 

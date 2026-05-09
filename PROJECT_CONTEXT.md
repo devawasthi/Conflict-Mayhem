@@ -26,7 +26,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - The draw pile now uses the full normal deck size after setup instead of the temporary `10`-card test cap.
 - A turn normally ends with a draw.
 - `Skip` is the only action card that skips the turn-ending draw.
-- `Sprint Planning` gives the next player `+2` required draws, but the acting player still draws to end their own turn.
+- `Nerd Attack` gives the next player `+2` required draws, but the acting player still draws to end their own turn.
 - `Nope` cancels the latest action or combo unless another `Nope` flips it back.
 - Drawing `Production Crash` without `Blame The Intern` eliminates the player.
 - Drawing `Production Crash` with `Blame The Intern` discards the mitt, and if the deck would otherwise go crash-free the discard pile is folded back into the deck and reshuffled immediately.
@@ -46,13 +46,12 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - `Nope`
 - `Peer Review`
 - `Skip`
-- `Sprint Planning`
+- `Nerd Attack`
 - `Shuffle`
 - `Project Manager`
 - `Rubber Duck`
 - `Coffee Break`
 - `Sticky Note`
-- `Mechanical Keyboard`
 - `Posh Training`
 
 ## Multiplayer / Room Behavior
@@ -80,7 +79,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 
 - Card art lives in `assets/cards/`.
 - The live deck should use the consistent illustrated `Git Rekt`-style card-art set; avoid mixing in unrelated standalone images for individual cards.
-- The card-art mappings should stay aligned with the current filenames in `assets/cards/`, including `skip.webp`, `shuffle.webp`, `sprint-planning.webp`, `coffee-break.webp`, `mechanical-keyboard.webp`, and `posh-training.webp`.
+- The card-art mappings should stay aligned with the current filenames in `assets/cards/`, including `skip.webp`, `shuffle.webp`, `nerd-attack.webp`, `coffee-break.webp`, and `posh-training.webp`.
 - The incident log is always scrollable, defaults to the latest visible entries, and no longer uses a `Show Full Log` expand/collapse control.
 - A `Production Crash` overlay animation appears for crash moments.
 - Draws and action plays now use a lightweight animated moment overlay.
@@ -99,9 +98,11 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - The standalone action-prompt panel has been removed; interactive prompts like reactions, target selection, and crash placement now render inline inside the action tray.
 - The draw control is fused into the combo tray as part of the same action area rather than living in a separate section.
 - The action tray is now sticky near the bottom of the hand area so draw/combo controls stay accessible while scrolling the room.
+- Live turns now use a 60-second room timer. If the active player does nothing in time, the server draws on their behalf; if a Nope window is open, it auto-passes when the timer expires.
 - All non-`Production Crash` cards can be selected into the combo tray, while turn-playable actions still use the same confirm-to-play flow.
 - Card selections clear automatically when your turn ends.
 - The room panel now exposes an in-match `Leave Room` button after the game has started.
+- Once a match starts, the room stays on the live board even after a winner is decided. The action tray switches into a winner banner instead of snapping back to the pre-game access card.
 - The match board now uses shorter stack placeholders, shorter hand cards, and a shorter incident log with internal scrolling.
 - Incident log entries are intentionally compact so more recent events stay visible without crowding the board.
 - Incident log items now use tighter padding and smaller type to increase visible history density, with the visible log window capped to roughly the latest five entries before scrolling.
@@ -125,7 +126,6 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Hand cards explicitly pin to the top of the grid and keep full opacity when not playable so the row still reads as a clean set of aligned card faces.
 - `count-pill`, `selected-pill`, and the fused draw-action tray should stay in the same cool accent family for visual consistency.
 - The `5 Different Tools` combo now uses the discard pile itself as the interaction point and opens a full discard-browser overlay for choosing the reclaim target.
-- `Rubber Duck` and the `Mechanical Keyboard` slot keep custom horizontal positioning, but no longer render smaller than the rest of the deck.
 
 ## Deployment Notes
 
@@ -140,7 +140,10 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Added illustrated card art for themed cards.
 - Added URL-based room persistence and same-browser reconnect support.
 - Compact the room join/create panel after a live match starts.
-- Updated `Sprint Planning` so it no longer skips the acting player's turn-ending draw.
+- Updated `Nerd Attack` so it no longer skips the acting player's turn-ending draw.
+- Spectators no longer see the action tray during an active round, and the hand header switches into a non-numeric spectator/watching state instead of showing a misleading `0` card count.
+- The room page now shows a compact lobby roster before start so everyone waiting is visible without revealing the full gameplay panels early.
+- During live matches, the room code remains visible in the room header as a compact chip.
 - Reduced hand-card density and added visual feedback for draws and action cards.
 - Compressed the board, log, and hand card sizing to fit more of the match on screen at once.
 - Split the frontend into a lobby page and a dedicated room page.

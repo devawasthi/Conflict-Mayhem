@@ -28,6 +28,7 @@ let reconnectAttemptCount = 0;
 let sessionRetryTimer = null;
 let sessionRetryCount = 0;
 let manualLeaveInProgress = false;
+let actionDeadlineTicker = null;
 
 const CARD_VISUALS = {
   hotPotato: { symbol: "!!", label: "Production Crash" },
@@ -35,13 +36,12 @@ const CARD_VISUALS = {
   nope: { symbol: "NO", label: "Nope" },
   peek: { symbol: "PR", label: "Peer Review" },
   skip: { symbol: "SK", label: "Skip" },
-  attack: { symbol: "SP", label: "Sprint Planning" },
+  attack: { symbol: "NA", label: "Nerd Attack" },
   mixUp: { symbol: "SH", label: "Shuffle" },
   swipe: { symbol: "PM", label: "Project Manager" },
   cookie: { symbol: "RD", label: "Rubber Duck" },
   donut: { symbol: "CB", label: "Coffee Break" },
   pretzel: { symbol: "SN", label: "Sticky Note" },
-  popcorn: { symbol: "KB", label: "Mechanical Keyboard" },
   candy: { symbol: "PT", label: "Posh Training" },
 };
 
@@ -51,23 +51,18 @@ const CARD_ART = {
   nope: "assets/cards/nope.webp",
   peek: "assets/cards/peer-review.webp",
   skip: "assets/cards/skip.webp",
-  attack: "assets/cards/sprint-planning.webp",
+  attack: "assets/cards/nerd-attack.webp",
   mixUp: "assets/cards/shuffle.webp",
   swipe: "assets/cards/project-manager.webp",
   cookie: "assets/cards/rubber-duck.webp",
   donut: "assets/cards/coffee-break.webp",
   pretzel: "assets/cards/sticky-note.webp",
-  popcorn: "assets/cards/mechanical-keyboard.webp",
   candy: "assets/cards/posh-training.webp",
 };
 
 const CARD_ART_TREATMENTS = {
   cookie: {
     positionX: "41%",
-    scale: 1,
-  },
-  popcorn: {
-    positionX: "59%",
     scale: 1,
   },
 };
@@ -80,7 +75,7 @@ const ACTION_MOMENT_COPY = {
   nope: "A risky move just got shut down.",
   peek: "The next three cards are being inspected.",
   skip: "The draw step was intentionally skipped.",
-  attack: "Extra pressure just got passed to the next player.",
+  attack: "A Nerd Attack just dumped extra draw pressure on the next player.",
   mixUp: "The deck order is getting scrambled.",
   swipe: "A random card is being yanked from another hand.",
 };
@@ -88,6 +83,7 @@ const ACTION_MOMENT_COPY = {
 const ui = {
   roomHero: document.querySelector("#room-hero"),
   connectionPill: document.querySelector("#connection-pill"),
+  roomCodePill: document.querySelector("#room-code-pill"),
   setupGrid: document.querySelector("#setup-grid"),
   nameInput: document.querySelector("#name-input"),
   roomInput: document.querySelector("#room-input"),
@@ -97,6 +93,9 @@ const ui = {
   roomEntryActions: document.querySelector("#room-entry-actions"),
   roomMemberActions: document.querySelector("#room-member-actions"),
   setupCompactNote: document.querySelector("#setup-compact-note"),
+  lobbyRoster: document.querySelector("#lobby-roster"),
+  lobbyRosterSummary: document.querySelector("#lobby-roster-summary"),
+  lobbyRosterList: document.querySelector("#lobby-roster-list"),
   joinRoomBtn: document.querySelector("#join-room-btn"),
   watchRoomBtn: document.querySelector("#watch-room-btn"),
   leaveRoomBtn: document.querySelector("#leave-room-btn"),
@@ -238,6 +237,13 @@ function clearSessionRetryTimer() {
   if (sessionRetryTimer) {
     window.clearTimeout(sessionRetryTimer);
     sessionRetryTimer = null;
+  }
+}
+
+function clearActionDeadlineTicker() {
+  if (actionDeadlineTicker) {
+    window.clearInterval(actionDeadlineTicker);
+    actionDeadlineTicker = null;
   }
 }
 
@@ -1314,10 +1320,76 @@ function isLiveMatch() {
   return Boolean(state.room?.started && !state.room?.winnerId);
 }
 
+function getWinnerPlayer() {
+  if (!state.room?.winnerId) {
+    return null;
+  }
+  return state.room.players.find((player) => player.id === state.room.winnerId) || null;
+}
+
+function formatCountdown(remainingMs) {
+  const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function getActionDeadlineCopy() {
+  if (!state.room?.started || state.room?.winnerId) {
+    return "";
+  }
+  if (!state.room?.actionDeadlineMs) {
+    return "";
+  }
+  if (state.room.pendingChoice?.kind === "reaction") {
+    return "Auto-pass in";
+  }
+  if (state.room.pendingChoice?.kind === "reinsert") {
+    return "Auto-place in";
+  }
+  return "Auto-draw in";
+}
+
+function updateActionDeadlineText() {
+  const timerText = ui.comboBar?.querySelector("#action-deadline-inline");
+  if (!timerText) {
+    return;
+  }
+
+  const prefix = getActionDeadlineCopy();
+  const deadline = state.room?.actionDeadlineMs;
+  if (!prefix || !deadline) {
+    timerText.hidden = true;
+    timerText.textContent = "";
+    return;
+  }
+
+  const remainingMs = Math.max(0, deadline - Date.now());
+  timerText.hidden = false;
+  timerText.textContent = `${prefix} ${formatCountdown(remainingMs)}`;
+}
+
+function syncActionDeadlineTicker() {
+  clearActionDeadlineTicker();
+  if (!state.room?.started || state.room?.winnerId || !state.room?.actionDeadlineMs) {
+    return;
+  }
+
+  updateActionDeadlineText();
+  actionDeadlineTicker = window.setInterval(() => {
+    if (!state.room?.actionDeadlineMs || state.room?.winnerId) {
+      clearActionDeadlineTicker();
+      return;
+    }
+    updateActionDeadlineText();
+  }, 1000);
+}
+
 function render() {
   renderConnection();
   renderSetupPanel();
   renderRoomMeta();
+  renderLobbyRoster();
   renderPlayers();
   renderCenter();
   renderLog();
@@ -1327,6 +1399,7 @@ function render() {
   renderMoment();
   renderPeerReview();
   renderDiscardBrowser();
+  syncActionDeadlineTicker();
 }
 
 function renderConnection() {
@@ -1340,7 +1413,7 @@ function renderConnection() {
 }
 
 function renderSetupPanel() {
-  const activeMatch = Boolean(state.room?.started && !state.room?.winnerId);
+  const matchStarted = Boolean(state.room?.started);
   const setDisplay = (element, show, displayValue = "grid") => {
     if (!element) {
       return;
@@ -1351,11 +1424,11 @@ function renderSetupPanel() {
   if (ui.roomHero) {
     ui.roomHero.classList.remove("compact");
   }
-  ui.setupGrid.classList.toggle("match-live", activeMatch);
-  setDisplay(ui.setupGrid, !activeMatch, "grid");
+  ui.setupGrid.classList.toggle("match-live", matchStarted);
+  setDisplay(ui.setupGrid, !matchStarted, "grid");
   if (ui.setupCard) {
-    ui.setupCard.hidden = activeMatch;
-    ui.setupCard.style.display = activeMatch ? "none" : "block";
+    ui.setupCard.hidden = matchStarted;
+    ui.setupCard.style.display = matchStarted ? "none" : "block";
   }
   ui.setupCard.classList.toggle("compact", false);
   ui.roomAccessPanel.hidden = false;
@@ -1366,12 +1439,12 @@ function renderSetupPanel() {
     ui.leaveRoomLiveBtn.hidden = !state.room;
     ui.leaveRoomLiveBtn.disabled = !state.room;
   }
-  setDisplay(ui.dashboardGrid, activeMatch, "grid");
+  setDisplay(ui.dashboardGrid, matchStarted, "grid");
   if (ui.playRow) {
-    ui.playRow.classList.toggle("pregame", !activeMatch);
+    ui.playRow.classList.toggle("pregame", !matchStarted);
   }
-  setDisplay(ui.playersCard, activeMatch, "block");
-  setDisplay(ui.sideStack, activeMatch, "grid");
+  setDisplay(ui.playersCard, matchStarted, "block");
+  setDisplay(ui.sideStack, matchStarted, "grid");
 }
 
 function renderRoomMeta() {
@@ -1400,6 +1473,10 @@ function renderRoomMeta() {
     if (ui.watchRoomBtn) {
       ui.watchRoomBtn.disabled = !linkedRoomCode || !canWatchByCode;
     }
+    if (ui.roomCodePill) {
+      ui.roomCodePill.hidden = true;
+      ui.roomCodePill.textContent = "";
+    }
     return;
   }
 
@@ -1417,6 +1494,11 @@ function renderRoomMeta() {
   }
   if (ui.leaveRoomLiveBtn) {
     ui.leaveRoomLiveBtn.disabled = false;
+  }
+  if (ui.roomCodePill) {
+    const showRoomCode = Boolean(state.room.started || state.room.winnerId);
+    ui.roomCodePill.hidden = !showRoomCode;
+    ui.roomCodePill.textContent = showRoomCode ? `Room ${state.room.roomCode}` : "";
   }
 }
 
@@ -1540,51 +1622,80 @@ function renderPlayers() {
   }
 
   state.room.players.forEach((player) => {
-    const article = document.createElement("article");
-    article.className = "player-card";
+    ui.playersList.append(buildPlayerCard(player));
+  });
+}
 
-    if (player.isCurrentTurn) {
-      article.classList.add("active-turn");
-    }
+function buildPlayerCard(player, options = {}) {
+  const lobbyMode = Boolean(options.lobbyMode);
+  const article = document.createElement("article");
+  article.className = "player-card";
 
-    if (!player.alive) {
-      article.classList.add("eliminated");
-    }
+  if (!lobbyMode && player.isCurrentTurn) {
+    article.classList.add("active-turn");
+  }
 
-    const badges = [];
-    let metaText = `Hand ${player.handCount} • Draws ${player.requiredDraws}`;
+  if (!player.alive && !player.isSpectator) {
+    article.classList.add("eliminated");
+  }
 
-    if (player.isHost) {
-      badges.push('<span class="badge host">Host</span>');
-    }
-    if (player.isCurrentTurn) {
-      badges.push('<span class="badge turn">Turn</span>');
-    }
-    if (player.isSpectator) {
-      badges.push('<span class="badge spectator">Spectator</span>');
-      metaText = "Watching only";
-    } else if (!player.alive) {
-      badges.push('<span class="badge dead">Out</span>');
-      metaText = "Watching this round";
-    }
-    if (player.isYou) {
-      badges.push('<span class="badge">You</span>');
-    }
-    if (player.isWatching && !player.isSpectator && !player.alive) {
-      badges.push('<span class="badge watch">Watching</span>');
-    }
+  const badges = [];
+  let metaText = lobbyMode ? "Ready in lobby" : `Hand ${player.handCount} • Draws ${player.requiredDraws}`;
 
-    article.innerHTML = `
-      <div class="player-row">
-        <div>
-          <div class="player-name">${escapeHtml(player.name)}</div>
-          <div class="player-meta">${escapeHtml(metaText)}</div>
-        </div>
-        <div class="player-badges">${badges.join("")}</div>
+  if (player.isHost) {
+    badges.push('<span class="badge host">Host</span>');
+  }
+  if (!lobbyMode && player.isCurrentTurn) {
+    badges.push('<span class="badge turn">Turn</span>');
+  }
+  if (player.isSpectator) {
+    badges.push('<span class="badge spectator">Spectator</span>');
+    metaText = lobbyMode ? "Watching this room" : "Watching only";
+  } else if (!player.alive) {
+    badges.push('<span class="badge dead">Out</span>');
+    metaText = "Watching this round";
+  }
+  if (player.isYou) {
+    badges.push('<span class="badge">You</span>');
+  }
+  if (!lobbyMode && player.isWatching && !player.isSpectator && !player.alive) {
+    badges.push('<span class="badge watch">Watching</span>');
+  }
+
+  article.innerHTML = `
+    <div class="player-row">
+      <div>
+        <div class="player-name">${escapeHtml(player.name)}</div>
+        <div class="player-meta">${escapeHtml(metaText)}</div>
       </div>
-    `;
+      <div class="player-badges">${badges.join("")}</div>
+    </div>
+  `;
 
-    ui.playersList.append(article);
+  return article;
+}
+
+function renderLobbyRoster() {
+  if (!ui.lobbyRoster || !ui.lobbyRosterList || !ui.lobbyRosterSummary) {
+    return;
+  }
+
+  const showRoster = Boolean(state.room && !state.room.started && state.room.players.length > 0);
+  ui.lobbyRoster.hidden = !showRoster;
+  ui.lobbyRoster.style.display = showRoster ? "grid" : "none";
+  ui.lobbyRosterList.innerHTML = "";
+
+  if (!showRoster) {
+    ui.lobbyRosterSummary.textContent = "";
+    return;
+  }
+
+  const activePlayers = state.room.players.filter((player) => !player.isSpectator).length;
+  const spectatorPlayers = state.room.players.filter((player) => player.isSpectator).length;
+  ui.lobbyRosterSummary.textContent = `${activePlayers} ready${spectatorPlayers ? ` • ${spectatorPlayers} spectating` : ""}`;
+
+  state.room.players.forEach((player) => {
+    ui.lobbyRosterList.append(buildPlayerCard(player, { lobbyMode: true }));
   });
 }
 
@@ -2053,11 +2164,22 @@ function renderHandSummary(totalCards, message) {
     return;
   }
 
+  if (message === "spectator-mode" || message === "watching-mode") {
+    ui.handSummary.innerHTML = `
+      <span class="hand-summary-copy is-status">${message === "spectator-mode" ? "Spectator Mode" : "Watching This Round"}</span>
+    `;
+    ui.handMeter.hidden = true;
+    ui.handMeterFill.style.width = "0%";
+    ui.handMeter.setAttribute("aria-valuenow", "0");
+    return;
+  }
+
   const safeCount = Number.isFinite(totalCards) ? Math.max(0, totalCards) : 0;
   const copy = message || `${safeCount === 1 ? "card" : "cards"} in hand`;
   const softCap = 12;
   const fillPercent = `${Math.min(safeCount / softCap, 1) * 100}%`;
 
+  ui.handMeter.hidden = false;
   ui.handSummary.innerHTML = `
     <span class="hand-summary-count">${safeCount}</span>
     <span class="hand-summary-copy">${escapeHtml(copy)}</span>
@@ -2079,9 +2201,42 @@ function buildEmptyHandStateMarkup(title, detail) {
 }
 
 function renderComboBar() {
+  ui.comboBar.hidden = false;
+
   if (!state.room) {
     ui.comboBar.innerHTML =
       '<div class="empty-state">Select combo-ready cards here when your turn starts.</div>';
+    return;
+  }
+
+  if (state.room.winnerId) {
+    const winner = getWinnerPlayer();
+    const winnerName = winner?.name || "A player";
+    ui.comboBar.innerHTML = `
+      <div class="match-result-banner">
+        <div class="match-result-copy">
+          <span class="match-result-kicker">Round Complete</span>
+          <strong>${escapeHtml(winnerName)} wins the match.</strong>
+          <p>Room stays open here. ${state.room.canStart ? "Start the next match when everyone is ready." : "Waiting for the host to start the next match."}</p>
+        </div>
+        <div class="action-row wrap match-result-actions">
+          ${state.room.canStart ? '<button id="restart-match-inline" class="primary-btn">Start Next Match</button>' : ""}
+          <button id="leave-after-match-btn" class="secondary-btn">Leave Room</button>
+        </div>
+      </div>
+    `;
+
+    const restartButton = ui.comboBar.querySelector("#restart-match-inline");
+    if (restartButton) {
+      restartButton.addEventListener("click", startGame);
+    }
+    ui.comboBar.querySelector("#leave-after-match-btn").addEventListener("click", leaveRoom);
+    return;
+  }
+
+  if (state.room.viewerIsSpectator || state.room.viewerIsEliminated) {
+    ui.comboBar.hidden = true;
+    ui.comboBar.innerHTML = "";
     return;
   }
 
@@ -2110,6 +2265,7 @@ function renderComboBar() {
       <div class="combo-draw-zone">
         <button id="draw-btn-inline" class="primary-btn draw-action-btn">Draw To End Turn</button>
         <p id="draw-status-inline" class="draw-status draw-status-inline"></p>
+        <p id="action-deadline-inline" class="action-deadline-inline" hidden></p>
       </div>
     </div>
     <div class="action-row wrap combo-actions">
@@ -2126,7 +2282,7 @@ function renderComboBar() {
   const drawStatus = ui.comboBar.querySelector("#draw-status-inline");
   drawButton.disabled = drawState.disabled;
   drawButton.textContent = drawState.label;
-  drawStatus.textContent = drawState.status;
+  drawStatus.textContent = drawState.status || state.room.promptText;
   ui.comboBar.querySelector("#play-selected-btn").disabled = !canPlaySelectedCard;
   ui.comboBar.querySelector("#pair-btn").disabled = locked || !stats.pairReady;
   ui.comboBar.querySelector("#trio-btn").disabled = locked || !stats.trioReady;
@@ -2147,6 +2303,7 @@ function renderComboBar() {
   if (shouldShowPrompt) {
     mountActionTrayPrompt(promptSlot);
   }
+  updateActionDeadlineText();
 }
 
 function renderHand() {
@@ -2163,9 +2320,9 @@ function renderHand() {
 
   const totalCards = state.room.hand.reduce((sum, card) => sum + card.count, 0);
   if (state.room.viewerIsSpectator) {
-    renderHandSummary(0, "spectating");
+    renderHandSummary(0, "spectator-mode");
   } else if (state.room.viewerIsEliminated) {
-    renderHandSummary(0, "watching");
+    renderHandSummary(0, "watching-mode");
   } else {
     renderHandSummary(totalCards, `${totalCards === 1 ? "card" : "cards"} in hand`);
   }
@@ -2328,6 +2485,7 @@ ui.nameInput.addEventListener("change", () => {
   rememberPlayerName(getPlayerName());
 });
 window.addEventListener("pagehide", () => {
+  clearActionDeadlineTicker();
   if (state.socket && state.socket.readyState === WebSocket.OPEN) {
     try {
       state.socket.close(1000, "pagehide");

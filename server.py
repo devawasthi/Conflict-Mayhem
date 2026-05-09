@@ -6,6 +6,7 @@ import random
 import socket
 import struct
 import threading
+import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
@@ -24,8 +25,9 @@ MAX_LOG_ENTRIES = 30
 MAX_ROOM_SIZE = 6
 ASSET_VERSION_TOKEN = "__ASSET_VERSION__"
 DISCONNECT_GRACE_SECONDS = 25
+ACTION_RESPONSE_SECONDS = 60
 
-SNACK_KEYS = ["cookie", "donut", "pretzel", "popcorn", "candy"]
+SNACK_KEYS = ["cookie", "donut", "pretzel", "candy"]
 DISPLAY_ORDER = [
     "hotPotato",
     "ovenMitt",
@@ -90,7 +92,7 @@ CARD_CATALOG = {
         "needsTarget": False,
     },
     "attack": {
-        "name": "Sprint Planning",
+        "name": "Nerd Attack",
         "tag": "Action",
         "description": "Force the next player to take two extra draws. You still draw to end your turn.",
         "themeClass": "theme-attack",
@@ -139,15 +141,6 @@ CARD_CATALOG = {
         "tag": "Desk Loot",
         "description": "No direct power on its own. Use Desk Loot cards for combo plays.",
         "themeClass": "theme-pretzel",
-        "group": "snack",
-        "turnPlayable": False,
-        "needsTarget": False,
-    },
-    "popcorn": {
-        "name": "Mechanical Keyboard",
-        "tag": "Desk Loot",
-        "description": "No direct power on its own. Use Desk Loot cards for combo plays.",
-        "themeClass": "theme-popcorn",
         "group": "snack",
         "turnPlayable": False,
         "needsTarget": False,
@@ -353,6 +346,7 @@ class GameRoom:
         self.deck: list[str] = []
         self.discard: list[str] = []
         self.log_entries: list[str] = []
+        self.action_deadline_at: Optional[float] = None
 
     def connected_players(self) -> list[Player]:
         return [player for player in self.players if player.connected]
@@ -1158,7 +1152,9 @@ class GameRoom:
             if not next_player:
                 return messages
             next_player.required_draws += 2
-            self.add_log(f"{actor.name} attacked. {next_player.name} must draw {next_player.required_draws} cards.")
+            self.add_log(
+                f"{actor.name} launched Nerd Attack. {next_player.name} must draw {next_player.required_draws} cards."
+            )
             return messages
 
         if kind == "mixUp":
@@ -1379,6 +1375,7 @@ class GameRoom:
             "roomCode": self.code,
             "started": self.started,
             "winnerId": self.winner_id,
+            "actionDeadlineMs": int(self.action_deadline_at * 1000) if self.action_deadline_at else None,
             "playerToken": viewer.session_token,
             "viewerIsSpectator": viewer.spectator,
             "viewerIsEliminated": self.started and not viewer.alive and not viewer.spectator,
@@ -1435,6 +1432,7 @@ class RoomManager:
         self.rooms: dict[str, GameRoom] = {}
         self.lock = threading.RLock()
         self.disconnect_timers: dict[tuple[str, str], threading.Timer] = {}
+        self.room_action_timers: dict[str, threading.Timer] = {}
 
     def create_room_code(self) -> str:
         alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -1476,6 +1474,62 @@ class RoomManager:
             if timer:
                 timer.cancel()
 
+    def cancel_room_action_timeout(self, room_code: str) -> None:
+        timer = self.room_action_timers.pop(room_code, None)
+        if timer:
+            timer.cancel()
+        room = self.rooms.get(room_code)
+        if room:
+            room.action_deadline_at = None
+
+    def schedule_room_action_timeout(self, room_code: str) -> None:
+        room = self.rooms.get(room_code)
+        if not room:
+            return
+
+        self.cancel_room_action_timeout(room_code)
+        room.action_deadline_at = time.time() + ACTION_RESPONSE_SECONDS
+        timer = threading.Timer(ACTION_RESPONSE_SECONDS, self.expire_room_action, args=(room_code,))
+        timer.daemon = True
+        self.room_action_timers[room_code] = timer
+        timer.start()
+
+    def sync_room_action_timeout(self, room: GameRoom) -> None:
+        if not room.started or room.winner_id:
+            self.cancel_room_action_timeout(room.code)
+            return
+
+        if room.pending_reinsert_player_id:
+            pending_player = room.get_player(room.pending_reinsert_player_id)
+            if pending_player and pending_player.alive:
+                self.schedule_room_action_timeout(room.code)
+                return
+
+        if room.pending_effect:
+            responder = room.get_player(room.pending_effect.get("current_responder_id"))
+            if responder and responder.alive and responder.connected:
+                self.schedule_room_action_timeout(room.code)
+                return
+
+        current_player = room.get_player(room.current_player_id)
+        if current_player and current_player.alive and current_player.connected:
+            self.schedule_room_action_timeout(room.code)
+            return
+
+        self.cancel_room_action_timeout(room.code)
+
+    def remove_room(self, room_code: str) -> None:
+        self.cancel_room_disconnect_timeouts(room_code)
+        self.cancel_room_action_timeout(room_code)
+        self.rooms.pop(room_code, None)
+
+    def finish_room_update(
+        self, room: GameRoom, messages: Optional[list[tuple[WebSocketConnection, dict]]] = None
+    ) -> None:
+        self.sync_room_action_timeout(room)
+        self.emit_messages(messages or [])
+        room.broadcast_state()
+
     def schedule_disconnect_timeout(self, room_code: str, player_id: str) -> None:
         self.cancel_disconnect_timeout(room_code, player_id)
         timer = threading.Timer(
@@ -1501,11 +1555,51 @@ class RoomManager:
             room.ensure_host()
 
             if not room.connected_players():
-                self.cancel_room_disconnect_timeouts(room.code)
-                self.rooms.pop(room.code, None)
+                self.remove_room(room.code)
                 return
 
-            room.broadcast_state()
+            self.finish_room_update(room)
+
+    def expire_room_action(self, room_code: str) -> None:
+        with self.lock:
+            self.cancel_room_action_timeout(room_code)
+            room = self.rooms.get(room_code)
+            if not room or not room.started or room.winner_id:
+                return
+
+            messages: list[tuple[WebSocketConnection, dict]] = []
+
+            if room.pending_reinsert_player_id:
+                player = room.get_player(room.pending_reinsert_player_id)
+                if player and player.alive:
+                    room.add_log(
+                        f"{player.name} ran out of time, so the Production Crash was tucked back at random."
+                    )
+                    room.choose_reinsert(player.id, "random")
+            elif room.pending_effect:
+                effect = room.pending_effect
+                responder = room.get_player(effect.get("current_responder_id"))
+                responder_name = responder.name if responder else "The next responder"
+                room.add_log(f"{responder_name} ran out of time to answer with Nope.")
+                effect["response_index"] += 1
+                if effect["response_index"] < len(effect["response_queue"]):
+                    effect["current_responder_id"] = effect["response_queue"][effect["response_index"]]
+                    next_responder = room.get_player(effect["current_responder_id"])
+                    if next_responder:
+                        room.add_log(f"{next_responder.name} may respond with Nope.")
+                else:
+                    messages = room.finalize_pending_effect()
+            else:
+                current_player = room.get_player(room.current_player_id)
+                if current_player and current_player.alive and current_player.connected:
+                    room.add_log(f"{current_player.name} took too long, so the deck drew automatically.")
+                    messages = room.draw_card(current_player.id)
+
+            if not room.connected_players():
+                self.remove_room(room.code)
+                return
+
+            self.finish_room_update(room, messages)
 
     def handle_message(self, connection: WebSocketConnection, payload: str) -> None:
         try:
@@ -1574,7 +1668,7 @@ class RoomManager:
         room.add_player(connection, sanitize_name(name))
         self.rooms[code] = room
         self.send_info(connection, f"Room {code} created. Share the code so someone can join.")
-        room.broadcast_state()
+        self.finish_room_update(room)
 
     def join_random_room(self, connection: WebSocketConnection, name: str) -> None:
         if connection.room_code:
@@ -1596,7 +1690,7 @@ class RoomManager:
         room = random.choice(eligible_rooms)
         room.add_player(connection, clean_name)
         self.send_info(connection, f"Joined open room {room.code}.")
-        room.broadcast_state()
+        self.finish_room_update(room)
 
     def watch_random_room(self, connection: WebSocketConnection, name: str) -> None:
         if connection.room_code:
@@ -1617,7 +1711,7 @@ class RoomManager:
         room = random.choice(eligible_rooms)
         room.add_player(connection, clean_name, spectator=True)
         self.send_info(connection, f"Watching room {room.code}.")
-        room.broadcast_state()
+        self.finish_room_update(room)
 
     def spectate_room(
         self, connection: WebSocketConnection, name: str, room_code: str, player_token: str
@@ -1637,12 +1731,12 @@ class RoomManager:
             if player:
                 self.cancel_disconnect_timeout(code, player.id)
                 self.send_info(connection, f"Rejoined room {code}.")
-                room.broadcast_state()
+                self.finish_room_update(room)
                 return
 
         room.add_player(connection, clean_name, spectator=True)
         self.send_info(connection, f"Watching room {code}.")
-        room.broadcast_state()
+        self.finish_room_update(room)
 
     def join_room(
         self, connection: WebSocketConnection, name: str, room_code: str, player_token: str
@@ -1662,7 +1756,7 @@ class RoomManager:
             if player:
                 self.cancel_disconnect_timeout(code, player.id)
                 self.send_info(connection, f"Rejoined room {code}.")
-                room.broadcast_state()
+                self.finish_room_update(room)
                 return
 
         if len(room.connected_participants()) >= MAX_ROOM_SIZE:
@@ -1671,12 +1765,12 @@ class RoomManager:
         if room.started and not room.winner_id:
             room.add_player(connection, clean_name, spectator=True)
             self.send_info(connection, f"Watching room {code}.")
-            room.broadcast_state()
+            self.finish_room_update(room)
             return
 
         room.add_player(connection, clean_name)
         self.send_info(connection, f"Joined room {code}.")
-        room.broadcast_state()
+        self.finish_room_update(room)
 
     def leave_room(self, connection: WebSocketConnection) -> None:
         if not connection.room_code:
@@ -1694,10 +1788,9 @@ class RoomManager:
         empty = room.leave_player(connection.player_id)
         connection.send_json({"type": "left_room"})
         if empty:
-            self.cancel_room_disconnect_timeouts(room.code)
-            self.rooms.pop(room.code, None)
+            self.remove_room(room.code)
         else:
-            room.broadcast_state()
+            self.finish_room_update(room)
 
     def start_game(self, connection: WebSocketConnection) -> None:
         room = self.rooms.get(connection.room_code or "")
@@ -1707,7 +1800,7 @@ class RoomManager:
             raise ValueError("Only the host can start the match.")
 
         room.start_game()
-        room.broadcast_state()
+        self.finish_room_update(room)
 
     def play_card(
         self, connection: WebSocketConnection, card_key: Optional[str], target_id: Optional[str]
@@ -1717,8 +1810,7 @@ class RoomManager:
             raise ValueError("Join a room first.")
 
         messages = room.play_card(connection.player_id, card_key, target_id)
-        self.emit_messages(messages)
-        room.broadcast_state()
+        self.finish_room_update(room, messages)
 
     def play_combo(
         self,
@@ -1745,8 +1837,7 @@ class RoomManager:
             discard_key,
             card_keys,
         )
-        self.emit_messages(messages)
-        room.broadcast_state()
+        self.finish_room_update(room, messages)
 
     def draw_card(self, connection: WebSocketConnection) -> None:
         room = self.rooms.get(connection.room_code or "")
@@ -1754,8 +1845,7 @@ class RoomManager:
             raise ValueError("Join a room first.")
 
         messages = room.draw_card(connection.player_id)
-        self.emit_messages(messages)
-        room.broadcast_state()
+        self.finish_room_update(room, messages)
 
     def choose_reinsert(self, connection: WebSocketConnection, placement: str) -> None:
         room = self.rooms.get(connection.room_code or "")
@@ -1763,7 +1853,7 @@ class RoomManager:
             raise ValueError("Join a room first.")
 
         room.choose_reinsert(connection.player_id, placement)
-        room.broadcast_state()
+        self.finish_room_update(room)
 
     def respond_nope(self, connection: WebSocketConnection, play_nope: bool) -> None:
         room = self.rooms.get(connection.room_code or "")
@@ -1771,8 +1861,7 @@ class RoomManager:
             raise ValueError("Join a room first.")
 
         messages = room.respond_nope(connection.player_id, play_nope)
-        self.emit_messages(messages)
-        room.broadcast_state()
+        self.finish_room_update(room, messages)
 
     def disconnect(self, connection: WebSocketConnection) -> None:
         with self.lock:
@@ -1784,12 +1873,11 @@ class RoomManager:
             player = room.get_player(connection.player_id)
             removable = room.disconnect_player(connection.player_id, connection)
             if removable:
-                self.cancel_room_disconnect_timeouts(room.code)
-                self.rooms.pop(room.code, None)
+                self.remove_room(room.code)
             else:
                 if room.started and player and player.alive:
                     self.schedule_disconnect_timeout(room.code, player.id)
-                room.broadcast_state()
+                self.finish_room_update(room)
             connection.close()
 
 

@@ -1,6 +1,6 @@
 # Crashing Productions
 
-Crashing Productions is an original multiplayer browser card game with room codes, real-time WebSocket updates, `Nope` reactions, `Peer Review`, `Skip`, `Shuffle`, `Sprint Planning`, spectator mode, and combo rules for `2` matching cards, `3` matching cards, and `5` different cards.
+Crashing Productions is an original multiplayer browser card game with room codes, real-time WebSocket updates, `Nope` reactions, `Peer Review`, `Skip`, `Shuffle`, `Nerd Attack`, spectator mode, and combo rules for `2` matching cards, `3` matching cards, and `5` different cards.
 
 Each room supports up to `6` players.
 
@@ -26,7 +26,7 @@ Open that URL in two browser tabs or two different browsers to test multiplayer.
 - If you draw a `Production Crash` with `Blame The Intern`, both cards are discarded.
 - `Nope` is a reaction card that cancels the latest action or combo unless another `Nope` flips it back.
 - `Skip` ends your turn immediately without the normal draw.
-- `Sprint Planning` adds `2` extra required draws to the next player, and you still draw to end your turn.
+- `Nerd Attack` adds `2` extra required draws to the next player, and you still draw to end your turn.
 - `Peer Review` shows you the next three cards privately.
 - `Shuffle` shuffles the deck.
 - `Project Manager` steals a random card from a chosen opponent.
