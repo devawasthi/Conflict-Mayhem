@@ -171,6 +171,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - All `Desk Loot` cards now share the same no-power combo-only description everywhere in the UI.
 - The `How To Play` combo strip now explains `2`, `3`, and `5` card combos in plain language.
 - The room page now includes a persistent `How To Play` overlay and a player chat overlay in the header.
+- The guide trigger now uses a text `Rules` pill instead of a `?` icon, and it sits at the left side of the relevant header/control cluster on both lobby and room screens.
 - `Nerd Attack` artwork uses a smaller render scale so its card frame is not clipped in hand, review, or moment contexts.
 - Victims of random steals now see exactly which card was yanked, and targeted action/combo logs call out the affected player by name.
 - The room action timer now force-draws on behalf of the active player even if their connection state is stale, so timeout turns continue advancing instead of hanging the match.
