@@ -164,6 +164,16 @@ body {
   font-size: 0.8rem;
 }
 
+.hero-tool-btn,
+.hero-chat-btn {
+  flex: 0 0 auto;
+}
+
+.hero-chat-btn {
+  padding: 9px 13px;
+  font-size: 0.78rem;
+}
+
 .room-hero.compact .hero-leave-btn {
   padding: 7px 11px;
   font-size: 0.74rem;
@@ -2316,6 +2326,102 @@ button:disabled {
     linear-gradient(145deg, rgba(111, 224, 255, 0.1), rgba(255, 255, 255, 0.03) 34%, rgba(10, 30, 39, 0.96) 78%),
     rgba(10, 30, 39, 0.96);
   box-shadow: 0 32px 90px rgba(0, 0, 0, 0.38);
+}
+
+.chat-panel {
+  width: min(720px, 100%);
+  max-height: min(82vh, 860px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 18px;
+}
+
+.chat-feed {
+  min-height: 280px;
+  max-height: 48vh;
+  display: grid;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.chat-item {
+  width: fit-content;
+  max-width: min(100%, 520px);
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chat-item.is-self {
+  justify-self: end;
+  background:
+    linear-gradient(135deg, rgba(111, 224, 255, 0.16), rgba(121, 246, 165, 0.08)),
+    rgba(255, 255, 255, 0.05);
+  border-color: rgba(111, 224, 255, 0.22);
+}
+
+.chat-item.is-spectator {
+  border-style: dashed;
+}
+
+.chat-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chat-item-head strong {
+  color: #f7fcfd;
+  font-size: 0.92rem;
+}
+
+.chat-item p {
+  margin: 0;
+  color: rgba(233, 248, 255, 0.92);
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
+.chat-role-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(111, 224, 255, 0.12);
+  color: #dffbff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.chat-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(6, 18, 24, 0.82);
+  color: var(--text);
+  font: inherit;
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: rgba(111, 224, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(111, 224, 255, 0.12);
 }
 
 .discard-browser-overlay {

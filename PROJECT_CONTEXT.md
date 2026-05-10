@@ -126,6 +126,11 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Hand cards explicitly pin to the top of the grid and keep full opacity when not playable so the row still reads as a clean set of aligned card faces.
 - `count-pill`, `selected-pill`, and the fused draw-action tray should stay in the same cool accent family for visual consistency.
 - The `5 Different Tools` combo now uses the discard pile itself as the interaction point and opens a full discard-browser overlay for choosing the reclaim target.
+- During multi-draw pressure from `Nerd Attack`, a player must resolve draws until only the final draw remains before they are allowed to play another action or combo.
+- `Skip` cannot cancel the forced part of `Nerd Attack`; a player must first complete the first two forced draws, and only then may use `Skip` to avoid the final normal draw.
+- The room page now keeps the rule-book available during live matches through an in-room guide button, using the same descriptive card and combo guide as the lobby.
+- Room chat is now available from the in-room header as an overlay so active players, eliminated players, and spectators can all follow or join the conversation without disturbing the board layout.
+- Targeted combo and steal feedback should be explicit in both the incident log and victim-side popups so players can see who was pressured and which card was taken.
 
 ## Deployment Notes
 
@@ -165,3 +170,7 @@ This file is the quick-reference notes file for the project. Update it whenever 
 - Spectator mode now works by room code, the pre-match room view only keeps the top access controls visible, and the guide popup is explicitly scrollable.
 - All `Desk Loot` cards now share the same no-power combo-only description everywhere in the UI.
 - The `How To Play` combo strip now explains `2`, `3`, and `5` card combos in plain language.
+- The room page now includes a persistent `How To Play` overlay and a player chat overlay in the header.
+- `Nerd Attack` artwork uses a smaller render scale so its card frame is not clipped in hand, review, or moment contexts.
+- Victims of random steals now see exactly which card was yanked, and targeted action/combo logs call out the affected player by name.
+- The room action timer now force-draws on behalf of the active player even if their connection state is stale, so timeout turns continue advancing instead of hanging the match.

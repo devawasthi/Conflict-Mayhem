@@ -12,6 +12,7 @@ const state = {
   momentQueue: [],
   peerReview: null,
   discardBrowserOpen: false,
+  chatOpen: false,
 };
 
 const CRASH_OVERLAY_DURATION_MS = 2600;
@@ -61,6 +62,10 @@ const CARD_ART = {
 };
 
 const CARD_ART_TREATMENTS = {
+  attack: {
+    positionX: "50%",
+    scale: 0.88,
+  },
   cookie: {
     positionX: "41%",
     scale: 1,
@@ -84,6 +89,8 @@ const ui = {
   roomHero: document.querySelector("#room-hero"),
   connectionPill: document.querySelector("#connection-pill"),
   roomCodePill: document.querySelector("#room-code-pill"),
+  roomGuideBtn: document.querySelector("#room-guide-btn"),
+  roomChatBtn: document.querySelector("#room-chat-btn"),
   setupGrid: document.querySelector("#setup-grid"),
   nameInput: document.querySelector("#name-input"),
   roomInput: document.querySelector("#room-input"),
@@ -132,6 +139,13 @@ const ui = {
   reviewMessage: document.querySelector("#review-message"),
   reviewCardGrid: document.querySelector("#review-card-grid"),
   reviewCloseBtn: document.querySelector("#review-close-btn"),
+  guideOverlay: document.querySelector("#guide-overlay"),
+  guideCloseBtn: document.querySelector("#guide-close-btn"),
+  chatOverlay: document.querySelector("#chat-overlay"),
+  chatCloseBtn: document.querySelector("#chat-close-btn"),
+  chatFeed: document.querySelector("#chat-feed"),
+  chatForm: document.querySelector("#chat-form"),
+  chatInput: document.querySelector("#chat-input"),
   discardBrowserOverlay: document.querySelector("#discard-browser-overlay"),
   discardBrowserMessage: document.querySelector("#discard-browser-message"),
   discardBrowserGrid: document.querySelector("#discard-browser-grid"),
@@ -368,6 +382,8 @@ function connectSocket() {
     state.momentQueue = [];
     hideMoment();
     hidePeerReview();
+    closeGuide();
+    closeChat();
     closeDiscardBrowser();
     scheduleRoomRecovery();
     render();
@@ -481,6 +497,8 @@ function handleRoomTransition(previousRoom, nextRoom) {
     state.momentQueue = [];
     hideMoment();
     hidePeerReview();
+    closeGuide();
+    closeChat();
     closeDiscardBrowser();
     return;
   }
@@ -490,6 +508,8 @@ function handleRoomTransition(previousRoom, nextRoom) {
     state.momentQueue = [];
     hideMoment();
     hidePeerReview();
+    closeGuide();
+    closeChat();
     closeDiscardBrowser();
     return;
   }
@@ -624,13 +644,14 @@ function buildInfoMoment(message) {
     };
   }
 
-  const stolenFromYouMatch = message.match(/^(.*?) stole one of your cards\.$/);
+  const stolenFromYouMatch = message.match(/^(.*?) yanked (.+) from your hand\.$/);
   if (stolenFromYouMatch) {
+    const cardKey = CARD_LABEL_TO_KEY[stolenFromYouMatch[2]];
     return {
       kicker: "Security Breach",
-      title: "Card Stolen",
-      text: `${stolenFromYouMatch[1]} yanked a random card from your hand.`,
-      cardKey: null,
+      title: stolenFromYouMatch[2],
+      text: `${stolenFromYouMatch[1]} yanked this card from your hand.`,
+      cardKey,
       symbol: "PM",
       tone: "danger",
     };
@@ -652,13 +673,14 @@ function buildInfoMoment(message) {
 }
 
 function buildActionMoment(entry) {
-  const playedMatch = entry.match(/^(.*?) played (.+)\.$/);
+  const playedMatch = entry.match(/^(.*?) played (.+?)(?: on (.+))?\.$/);
   if (!playedMatch) {
     return null;
   }
 
   const actorName = playedMatch[1];
   const label = playedMatch[2];
+  const targetName = playedMatch[3];
   const cardKey = CARD_LABEL_TO_KEY[label];
 
   if (!cardKey || !ACTION_MOMENT_COPY[cardKey]) {
@@ -668,7 +690,7 @@ function buildActionMoment(entry) {
   return {
     kicker: actorName,
     title: label,
-    text: ACTION_MOMENT_COPY[cardKey],
+    text: targetName ? `${ACTION_MOMENT_COPY[cardKey]} Target: ${targetName}.` : ACTION_MOMENT_COPY[cardKey],
     cardKey,
   };
 }
@@ -729,6 +751,51 @@ function showPeerReview(payload) {
 function hidePeerReview() {
   state.peerReview = null;
   renderPeerReview();
+}
+
+function openGuide() {
+  if (!ui.guideOverlay) {
+    return;
+  }
+  ui.guideOverlay.hidden = false;
+  ui.guideOverlay.setAttribute("aria-hidden", "false");
+}
+
+function closeGuide() {
+  if (!ui.guideOverlay) {
+    return;
+  }
+  ui.guideOverlay.hidden = true;
+  ui.guideOverlay.setAttribute("aria-hidden", "true");
+}
+
+function openChat() {
+  if (!ui.chatOverlay || !state.room) {
+    return;
+  }
+  state.chatOpen = true;
+  renderChat();
+  ui.chatInput?.focus();
+}
+
+function closeChat() {
+  state.chatOpen = false;
+  renderChat();
+}
+
+function sendChatMessage(event) {
+  if (event) {
+    event.preventDefault();
+  }
+  if (!state.room || !ui.chatInput) {
+    return;
+  }
+  const text = ui.chatInput.value.trim();
+  if (!text) {
+    return;
+  }
+  send({ type: "send_chat", text });
+  ui.chatInput.value = "";
 }
 
 function getKnownCardPayload(cardKey) {
@@ -1398,6 +1465,7 @@ function render() {
   renderCrashOverlay();
   renderMoment();
   renderPeerReview();
+  renderChat();
   renderDiscardBrowser();
   syncActionDeadlineTicker();
 }
@@ -1477,6 +1545,9 @@ function renderRoomMeta() {
       ui.roomCodePill.hidden = true;
       ui.roomCodePill.textContent = "";
     }
+    if (ui.roomChatBtn) {
+      ui.roomChatBtn.hidden = true;
+    }
     return;
   }
 
@@ -1494,6 +1565,10 @@ function renderRoomMeta() {
   }
   if (ui.leaveRoomLiveBtn) {
     ui.leaveRoomLiveBtn.disabled = false;
+  }
+  if (ui.roomChatBtn) {
+    ui.roomChatBtn.hidden = false;
+    ui.roomChatBtn.disabled = false;
   }
   if (ui.roomCodePill) {
     const showRoomCode = Boolean(state.room.started || state.room.winnerId);
@@ -1523,7 +1598,6 @@ function getDrawUiState() {
     return {
       disabled: true,
       label: "Waiting For Turn",
-      status: "This control becomes available during your turn.",
     };
   }
 
@@ -2102,6 +2176,55 @@ function renderPeerReview() {
   });
 }
 
+function renderChat() {
+  if (!ui.chatOverlay || !ui.chatFeed) {
+    return;
+  }
+
+  if (!state.chatOpen) {
+    ui.chatOverlay.hidden = true;
+    ui.chatOverlay.setAttribute("aria-hidden", "true");
+    return;
+  }
+
+  ui.chatOverlay.hidden = false;
+  ui.chatOverlay.setAttribute("aria-hidden", "false");
+
+  const wasNearBottom =
+    ui.chatFeed.scrollHeight - ui.chatFeed.scrollTop - ui.chatFeed.clientHeight < 32;
+
+  const entries = Array.isArray(state.room?.chat) ? state.room.chat : [];
+  ui.chatFeed.innerHTML = "";
+
+  if (entries.length === 0) {
+    ui.chatFeed.innerHTML = '<div class="empty-state">No messages yet. Break the silence.</div>';
+  } else {
+    const selfPlayer = getSelfPlayer();
+    entries.forEach((entry) => {
+      const item = document.createElement("article");
+      item.className = "chat-item";
+      if (selfPlayer && entry.playerId === selfPlayer.id) {
+        item.classList.add("is-self");
+      }
+      if (entry.isSpectator) {
+        item.classList.add("is-spectator");
+      }
+      item.innerHTML = `
+        <div class="chat-item-head">
+          <strong>${escapeHtml(entry.playerName)}</strong>
+          ${entry.isSpectator ? '<span class="chat-role-pill">Spectator</span>' : ""}
+        </div>
+        <p>${escapeHtml(entry.text)}</p>
+      `;
+      ui.chatFeed.append(item);
+    });
+  }
+
+  if (wasNearBottom) {
+    ui.chatFeed.scrollTop = ui.chatFeed.scrollHeight;
+  }
+}
+
 function renderDiscardBrowser() {
   if (!ui.discardBrowserOverlay) {
     return;
@@ -2357,7 +2480,7 @@ function renderHand() {
     const button = document.createElement("button");
     button.className = `card-btn ${card.themeClass}${artwork ? " has-art" : ""}`;
 
-    const clickable = !handLocked && isComboEligibleCard(card);
+    const clickable = state.room.canPlay && !handLocked && isComboEligibleCard(card);
 
     button.classList.toggle("is-clickable", clickable);
     button.classList.toggle("is-inactive", !clickable);
@@ -2450,6 +2573,42 @@ ui.startGameBtn.addEventListener("click", startGame);
 ui.copyRoomBtn.addEventListener("click", copyRoomCode);
 if (ui.reviewCloseBtn) {
   ui.reviewCloseBtn.addEventListener("click", hidePeerReview);
+}
+
+if (ui.roomGuideBtn) {
+  ui.roomGuideBtn.addEventListener("click", openGuide);
+}
+
+if (ui.guideCloseBtn) {
+  ui.guideCloseBtn.addEventListener("click", closeGuide);
+}
+
+if (ui.guideOverlay) {
+  ui.guideOverlay.addEventListener("click", (event) => {
+    if (event.target === ui.guideOverlay) {
+      closeGuide();
+    }
+  });
+}
+
+if (ui.roomChatBtn) {
+  ui.roomChatBtn.addEventListener("click", openChat);
+}
+
+if (ui.chatCloseBtn) {
+  ui.chatCloseBtn.addEventListener("click", closeChat);
+}
+
+if (ui.chatOverlay) {
+  ui.chatOverlay.addEventListener("click", (event) => {
+    if (event.target === ui.chatOverlay) {
+      closeChat();
+    }
+  });
+}
+
+if (ui.chatForm) {
+  ui.chatForm.addEventListener("submit", sendChatMessage);
 }
 if (ui.reviewOverlay) {
   ui.reviewOverlay.addEventListener("click", (event) => {

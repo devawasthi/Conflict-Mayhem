@@ -22,6 +22,7 @@ PORT = int(os.getenv("PORT", "8765"))
 BASE_DIR = Path(__file__).resolve().parent
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_LOG_ENTRIES = 30
+MAX_CHAT_ENTRIES = 40
 MAX_ROOM_SIZE = 6
 ASSET_VERSION_TOKEN = "__ASSET_VERSION__"
 DISCONNECT_GRACE_SECONDS = 25
@@ -173,6 +174,11 @@ def sanitize_room_code(value: str) -> str:
 def sanitize_session_token(value: Optional[str]) -> str:
     token = "".join(character for character in (value or "").strip() if character.isalnum())
     return token[:64]
+
+
+def sanitize_chat_text(value: str) -> str:
+    cleaned = " ".join((value or "").strip().split())
+    return cleaned[:240]
 
 
 def make_card_payload(card_key: str) -> dict:
@@ -346,6 +352,7 @@ class GameRoom:
         self.deck: list[str] = []
         self.discard: list[str] = []
         self.log_entries: list[str] = []
+        self.chat_entries: list[dict] = []
         self.action_deadline_at: Optional[float] = None
 
     def connected_players(self) -> list[Player]:
@@ -374,6 +381,23 @@ class GameRoom:
     def add_log(self, message: str) -> None:
         self.log_entries.append(message)
         self.log_entries = self.log_entries[-MAX_LOG_ENTRIES:]
+
+    def add_chat(self, player: Player, text: str) -> None:
+        message = sanitize_chat_text(text)
+        if not message:
+            raise ValueError("Type a message before sending chat.")
+
+        self.chat_entries.append(
+            {
+                "id": uuid.uuid4().hex[:10],
+                "playerId": player.id,
+                "playerName": player.name,
+                "text": message,
+                "isSpectator": player.spectator or not player.alive,
+                "timestampMs": int(time.time() * 1000),
+            }
+        )
+        self.chat_entries = self.chat_entries[-MAX_CHAT_ENTRIES:]
 
     def order_after(
         self, player_id: Optional[str], exclude_id: Optional[str] = None, require_nope: bool = False
@@ -685,9 +709,9 @@ class GameRoom:
                 self.resolve_effect(effect)
             self.pending_effect = None
 
-    def assert_turn_player(self, player_id: str) -> Player:
+    def assert_turn_player(self, player_id: str, allow_disconnected: bool = False) -> Player:
         player = self.get_player(player_id)
-        if not player or not player.connected:
+        if not player or (not allow_disconnected and not player.connected):
             raise ValueError("You are not attached to an active player.")
         if not self.started:
             raise ValueError("The match has not started yet.")
@@ -804,9 +828,18 @@ class GameRoom:
         self.deck = self.normalize_deck(deck_source)
         return True
 
-    def start_effect(self, effect: dict) -> list[tuple[WebSocketConnection, dict]]:
+    def build_effect_log_message(self, effect: dict) -> str:
         actor = self.get_player(effect["actor_id"])
-        self.add_log(f"{actor.name} played {effect['label']}.")
+        actor_name = actor.name if actor else "A player"
+        target = self.get_player(effect.get("target_id"))
+
+        if effect["kind"] in {"swipe", "pair", "trio"} and target:
+            return f"{actor_name} played {effect['label']} on {target.name}."
+
+        return f"{actor_name} played {effect['label']}."
+
+    def start_effect(self, effect: dict) -> list[tuple[WebSocketConnection, dict]]:
+        self.add_log(self.build_effect_log_message(effect))
 
         responders = self.order_after(effect["actor_id"], exclude_id=effect["actor_id"], require_nope=True)
         if responders:
@@ -814,6 +847,7 @@ class GameRoom:
             effect["response_index"] = 0
             effect["current_responder_id"] = responders[0]
             effect["canceled"] = False
+            effect["nopeCount"] = 0
             self.pending_effect = effect
             responder = self.get_player(responders[0])
             self.add_log(f"{responder.name} may respond with Nope.")
@@ -830,6 +864,14 @@ class GameRoom:
 
         if effect["canceled"]:
             self.add_log(f"{effect['label']} was stopped by Nope.")
+            actor = self.get_player(effect["actor_id"])
+            if actor and actor.connection:
+                return [
+                    (
+                        actor.connection,
+                        {"type": "info", "message": f"Your {effect['label']} was stopped by Nope."},
+                    )
+                ]
             return []
 
         messages = self.resolve_effect(effect)
@@ -854,6 +896,7 @@ class GameRoom:
             player.hand.remove("nope")
             self.discard.append("nope")
             effect["canceled"] = not effect["canceled"]
+            effect["nopeCount"] = effect.get("nopeCount", 0) + 1
             self.add_log(f"{player.name} played Nope.")
 
             responders = self.order_after(player.id, exclude_id=player.id, require_nope=True)
@@ -887,6 +930,10 @@ class GameRoom:
 
         if card_key not in player.hand:
             raise ValueError("That card is not in your hand.")
+        if player.required_draws > 1:
+            raise ValueError(
+                f"You must finish drawing {player.required_draws} cards before playing another card."
+            )
         if not card["turnPlayable"]:
             raise ValueError("That card cannot be played on your turn.")
 
@@ -922,6 +969,10 @@ class GameRoom:
         card_keys: Optional[list[str]],
     ) -> list[tuple[WebSocketConnection, dict]]:
         player = self.assert_turn_player(player_id)
+        if player.required_draws > 1:
+            raise ValueError(
+                f"You must finish drawing {player.required_draws} cards before playing another card."
+            )
 
         if combo_type == "pair":
             if not card_key or not is_combo_eligible_key(card_key):
@@ -997,8 +1048,10 @@ class GameRoom:
 
         raise ValueError("Unknown combo type.")
 
-    def draw_card(self, player_id: str) -> list[tuple[WebSocketConnection, dict]]:
-        player = self.assert_turn_player(player_id)
+    def draw_card(
+        self, player_id: str, allow_disconnected: bool = False
+    ) -> list[tuple[WebSocketConnection, dict]]:
+        player = self.assert_turn_player(player_id, allow_disconnected=allow_disconnected)
         if not self.deck:
             if self.recycle_discard_into_deck():
                 self.add_log("The discard pile was shuffled back into the deck.")
@@ -1113,7 +1166,10 @@ class GameRoom:
             ),
             (
                 target.connection,
-                {"type": "info", "message": f"{actor.name} stole one of your cards."},
+                {
+                    "type": "info",
+                    "message": f"{actor.name} yanked {CARD_CATALOG[stolen]['name']} from your hand.",
+                },
             ),
         ]
 
@@ -1284,7 +1340,7 @@ class GameRoom:
 
     def serialize_for(self, viewer: Player) -> dict:
         current_player = self.get_player(self.current_player_id)
-        can_play = (
+        can_take_turn = (
             self.started
             and not self.winner_id
             and not self.pending_effect
@@ -1292,7 +1348,8 @@ class GameRoom:
             and self.current_player_id == viewer.id
             and viewer.alive
         )
-        can_draw = can_play
+        can_play = can_take_turn and viewer.required_draws <= 1
+        can_draw = can_take_turn
 
         phase_label = "Lobby"
         if self.started and not self.winner_id:
@@ -1348,14 +1405,12 @@ class GameRoom:
             prompt_text = "You are spectating this round."
         elif viewer.spectator:
             prompt_text = "You are spectating this room."
+        elif can_draw and viewer.required_draws > 1:
+            prompt_text = (
+                f"You must resolve {viewer.required_draws} draws before playing another card."
+            )
         elif can_play:
-            if viewer.required_draws > 1:
-                prompt_text = (
-                    f"You need to resolve {viewer.required_draws} draws this turn. "
-                    "You can still play one action or combo before drawing."
-                )
-            else:
-                prompt_text = "Play one action or combo, or draw immediately to end your turn."
+            prompt_text = "Play one action or combo, or draw immediately to end your turn."
         elif self.started and not viewer.alive:
             prompt_text = "You are out for this round, but you can keep watching until the next match."
         elif self.started:
@@ -1391,6 +1446,7 @@ class GameRoom:
             "discardPile": self.discard_pile_payload(),
             "discardChoices": self.discard_choice_payload(),
             "requestOptions": self.request_options_payload(),
+            "chat": self.chat_entries[-MAX_CHAT_ENTRIES:],
             "players": [
                 {
                     "id": player.id,
@@ -1512,7 +1568,7 @@ class RoomManager:
                 return
 
         current_player = room.get_player(room.current_player_id)
-        if current_player and current_player.alive and current_player.connected:
+        if current_player and current_player.alive:
             self.schedule_room_action_timeout(room.code)
             return
 
@@ -1591,9 +1647,9 @@ class RoomManager:
                     messages = room.finalize_pending_effect()
             else:
                 current_player = room.get_player(room.current_player_id)
-                if current_player and current_player.alive and current_player.connected:
+                if current_player and current_player.alive:
                     room.add_log(f"{current_player.name} took too long, so the deck drew automatically.")
-                    messages = room.draw_card(current_player.id)
+                    messages = room.draw_card(current_player.id, allow_disconnected=True)
 
             if not room.connected_players():
                 self.remove_room(room.code)
@@ -1654,6 +1710,8 @@ class RoomManager:
                     self.choose_reinsert(connection, message.get("placement", ""))
                 elif action == "respond_nope":
                     self.respond_nope(connection, bool(message.get("playNope")))
+                elif action == "send_chat":
+                    self.send_chat(connection, message.get("text", ""))
                 else:
                     self.send_error(connection, "Unknown action.")
             except ValueError as error:
@@ -1862,6 +1920,18 @@ class RoomManager:
 
         messages = room.respond_nope(connection.player_id, play_nope)
         self.finish_room_update(room, messages)
+
+    def send_chat(self, connection: WebSocketConnection, text: str) -> None:
+        room = self.rooms.get(connection.room_code or "")
+        if not room:
+            raise ValueError("Join a room first.")
+
+        player = room.get_player(connection.player_id)
+        if not player or not player.connected:
+            raise ValueError("You are not attached to an active room member.")
+
+        room.add_chat(player, text)
+        self.finish_room_update(room)
 
     def disconnect(self, connection: WebSocketConnection) -> None:
         with self.lock:

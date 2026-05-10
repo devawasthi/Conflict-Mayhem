@@ -1116,7 +1116,6 @@ function getDrawUiState() {
     return {
       disabled: true,
       label: "Waiting For Turn",
-      status: "This control becomes available during your turn.",
     };
   }
 
